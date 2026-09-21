@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # tests/run_tests.sh — run all tests and report pass/fail
-set -euo pipefail
+set -uo pipefail
 
-COMPILER="python3 $(dirname "$0")/../compiler.py"
+COMPILER="$(dirname "$0")/../compiler.py"
 TESTS_DIR="$(dirname "$0")"
 TMPOUT=$(mktemp /tmp/compiler_test_XXXXXX.ll)
 TMPSTDERR=$(mktemp /tmp/compiler_test_XXXXXX.err)

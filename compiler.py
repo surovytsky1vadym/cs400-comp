@@ -13,6 +13,7 @@ and emits LLVM IR via llvmlite.ir.
 
 import sys
 from llvmlite import ir
+import llvmlite.binding as llvm
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -253,7 +254,7 @@ def parse_and_build(lines):
     void = ir.VoidType()
 
     module = ir.Module(name="program")
-    module.triple = "x86_64-unknown-linux-gnu"
+    module.triple = llvm.get_default_triple()
 
     # Declare printf
     printf_ty  = ir.FunctionType(i32, [ir.PointerType(i8)], var_arg=True)

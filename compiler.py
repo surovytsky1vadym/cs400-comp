@@ -1,14 +1,14 @@
 """
-compiler.py  —  Practice 2
+compiler.py  —  Practice 3
 Languages and Compilers Design · CS400
 
 Usage:
     python3 compiler.py input.txt output.ll
+    python3 compiler.py --ast input.txt
     lli output.ll
 
-The compiler reads a source file, lexes it into typed tokens using a
-hand-written byte-level state machine, validates syntax and semantics,
-and emits LLVM IR via llvmlite.ir.
+The compiler reads a source file, lexes it, parses it into an AST via recursive descent,
+and then generates LLVM IR by walking the AST.
 """
 
 import sys
@@ -18,22 +18,14 @@ import llvmlite.binding as llvm
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
 def is_alpha(b):
-    """True for ASCII letters and underscore."""
-    return (65 <= b <= 90) or (97 <= b <= 122) or b == 95   # A-Z, a-z, _
+    return (65 <= b <= 90) or (97 <= b <= 122) or b == 95
 
 def is_digit(b):
-    """True for ASCII decimal digits."""
-    return 48 <= b <= 57   # 0-9
+    return 48 <= b <= 57
 
 def is_alnum(b):
     return is_alpha(b) or is_digit(b)
-
-
-# ---------------------------------------------------------------------------
-# Keywords
-# ---------------------------------------------------------------------------
 
 KEYWORDS = {
     b"i32":  ("keyword", "typename"),
@@ -41,134 +33,62 @@ KEYWORDS = {
     b"exit": ("keyword", "statement"),
 }
 
-
-# ---------------------------------------------------------------------------
-# Token
-# ---------------------------------------------------------------------------
-
 class Token:
-    """A single lexed token."""
     __slots__ = ("kind", "subkind", "text", "line", "col")
-
     def __init__(self, kind, text, line, col, subkind=None):
-        self.kind    = kind     # "keyword" | "ident" | "number" | "lbrace" |
-                                # "rbrace" | "operator" | "endline"
-        self.subkind = subkind  # for keywords: "typename" | "specifier" | "statement"
-                                # for operators: ":=" | "+" | "-" | "*"
-        self.text    = text     # str
-        self.line    = line     # 1-based
-        self.col     = col      # 1-based
-
+        self.kind = kind
+        self.subkind = subkind
+        self.text = text
+        self.line = line
+        self.col = col
     def __repr__(self):
         if self.subkind:
             return f"({self.text!r}, {self.kind}, {self.subkind})"
         return f"({self.text!r}, {self.kind})"
 
-
-# ---------------------------------------------------------------------------
-# Error
-# ---------------------------------------------------------------------------
-
 class CompileError(Exception):
-    """Raised on any lexical, syntactic or semantic error."""
-    def __init__(self, message):
-        super().__init__(message)
-
+    pass
 
 def die(message):
-    """Print compilation error to stderr and exit non-zero."""
     print(f"compilation error: {message}", file=sys.stderr)
     sys.exit(1)
-
 
 # ---------------------------------------------------------------------------
 # TASK 1 — Lexer
 # ---------------------------------------------------------------------------
-
 def lex(data: bytes):
-    """
-    Hand-written byte-by-byte state machine.
-    Returns a list of lines, each a list of Token objects.
-    Newline tokens are NOT included in the inner lists; instead each
-    inner list represents one source line.
-
-    States: START, IDENT, NUMBER, COLON
-    """
-    lines  = []   # list of completed lines
-    tokens = []   # tokens on the current line
-
+    lines  = []
+    tokens = []
     state = "START"
-    start = 0       # byte index where current token started
-    start_col = 1   # column of that byte
-
+    start = 0
+    start_col = 1
     line = 1
-    col  = 1        # column of the *current* byte (1-based)
-    i    = 0
-
-    # We run one extra iteration (i == len(data)) to flush any open token.
+    col = 1
+    i = 0
     while i <= len(data):
-        b = data[i] if i < len(data) else None   # None = end-of-input sentinel
-
-        # ------------------------------------------------------------------ START
+        b = data[i] if i < len(data) else None
         if state == "START":
-            if b is None:
-                break
-
-            elif b in (32, 9):          # space or tab — skip
-                pass
-
-            elif b == 10:               # newline — end of line
+            if b is None: break
+            elif b in (32, 9): pass
+            elif b == 10:
                 lines.append(tokens)
                 tokens = []
                 line += 1
-                col = 0                 # will become 1 after i += 1 below
-
-            elif is_alpha(b):           # start of identifier / keyword
-                state     = "IDENT"
-                start     = i
-                start_col = col
-
-            elif is_digit(b):           # start of number
-                state     = "NUMBER"
-                start     = i
-                start_col = col
-
-            elif b == ord("{"):
-                tokens.append(Token("lbrace", "{", line, col))
-
-            elif b == ord("}"):
-                tokens.append(Token("rbrace", "}", line, col))
-
-            elif b == ord("+"):
-                tokens.append(Token("operator", "+", line, col, "+"))
-
-            elif b == ord("-"):
-                tokens.append(Token("operator", "-", line, col, "-"))
-
-            elif b == ord("*"):
-                tokens.append(Token("operator", "*", line, col, "*"))
-
-            elif b == ord(":"):
-                state     = "COLON"
-                start_col = col
-
-            elif b == ord("="):
-                # lone '=' is a lexical error
-                raise CompileError(
-                    f"line {line}:{col}: unexpected byte '='"
-                )
-
+                col = 0
+            elif is_alpha(b): state, start, start_col = "IDENT", i, col
+            elif is_digit(b): state, start, start_col = "NUMBER", i, col
+            elif b == ord("{"): tokens.append(Token("lbrace", "{", line, col))
+            elif b == ord("}"): tokens.append(Token("rbrace", "}", line, col))
+            elif b == ord("+"): tokens.append(Token("op", "+", line, col, "+"))
+            elif b == ord("-"): tokens.append(Token("op", "-", line, col, "-"))
+            elif b == ord("*"): tokens.append(Token("op", "*", line, col, "*"))
+            elif b == ord(":"): state, start_col = "COLON", col
+            elif b == ord("="): raise CompileError(f"line {line}:{col}: unexpected byte '='")
             else:
                 ch = chr(b) if b < 128 else f"\\x{b:02x}"
-                raise CompileError(
-                    f"line {line}:{col}: unexpected byte '{ch}'"
-                )
-
-        # ------------------------------------------------------------------ IDENT
+                raise CompileError(f"line {line}:{col}: unexpected byte '{ch}'")
         elif state == "IDENT":
-            if b is not None and is_alnum(b):
-                pass   # keep collecting
-
+            if b is not None and is_alnum(b): pass
             else:
                 word = data[start:i]
                 if word in KEYWORDS:
@@ -177,293 +97,354 @@ def lex(data: bytes):
                 else:
                     tokens.append(Token("ident", word.decode(), line, start_col))
                 state = "START"
-                continue   # re-read byte b in START (do NOT advance i)
-
-        # ------------------------------------------------------------------ NUMBER
+                continue
         elif state == "NUMBER":
-            if b is not None and is_digit(b):
-                pass   # keep collecting
-
+            if b is not None and is_digit(b): pass
             elif b is not None and is_alpha(b):
-                # letter immediately after digit: lexical error
-                ch = chr(b)
-                raise CompileError(
-                    f"line {line}:{col}: unexpected byte '{ch}' inside number"
-                )
-
+                raise CompileError(f"line {line}:{col}: unexpected byte '{chr(b)}' inside number")
             else:
                 word = data[start:i]
                 tokens.append(Token("number", word.decode(), line, start_col))
                 state = "START"
-                continue   # re-read byte b in START
-
-        # ------------------------------------------------------------------ COLON
+                continue
         elif state == "COLON":
             if b == ord("="):
-                tokens.append(Token("operator", ":=", line, start_col, ":="))
+                tokens.append(Token("op", ":=", line, start_col, ":="))
                 state = "START"
-
             else:
-                # ':' not followed by '=' is a lexical error
-                raise CompileError(
-                    f"line {line}:{start_col}: unexpected byte ':'"
-                )
-
-        # advance
-        i   += 1
+                raise CompileError(f"line {line}:{start_col}: unexpected byte ':'")
+        i += 1
         col += 1
-
-    # Any tokens left on the last line (file did not end with newline)
-    if tokens:
-        lines.append(tokens)
-
+    if tokens: lines.append(tokens)
     return lines
-
-
-# ---------------------------------------------------------------------------
-# Worked-example pretty-print helper  (used by --lex-dump)
-# ---------------------------------------------------------------------------
 
 def dump_tokens(lines):
     for row in lines:
         print("  ".join(repr(t) for t in row))
 
+# ---------------------------------------------------------------------------
+# AST Nodes
+# ---------------------------------------------------------------------------
+class Node:
+    def dump(self, indent=0):
+        raise NotImplementedError()
+    def codegen(self, cg):
+        raise NotImplementedError()
+
+class ProgramNode(Node):
+    def __init__(self, stmts, exit_node):
+        self.stmts = stmts
+        self.exit_node = exit_node
+    def dump(self, indent=0):
+        print(" " * indent + "Program")
+        for stmt in self.stmts:
+            stmt.dump(indent + 2)
+        if self.exit_node:
+            self.exit_node.dump(indent + 2)
+    def codegen(self, cg):
+        for stmt in self.stmts:
+            stmt.codegen(cg)
+        self.exit_node.codegen(cg)
+
+class StmtNode(Node): pass
+
+class DeclNode(StmtNode):
+    def __init__(self, line, col, name, mutable, init):
+        self.line, self.col, self.name, self.mutable, self.init = line, col, name, mutable, init
+    def dump(self, indent=0):
+        print(" " * indent + f"Decl {self.name} {'mut' if self.mutable else 'const'}")
+        self.init.dump(indent + 2)
+    def codegen(self, cg):
+        cg.visit_decl(self)
+
+class AssignNode(StmtNode):
+    def __init__(self, line, col, name, value):
+        self.line, self.col, self.name, self.value = line, col, name, value
+    def dump(self, indent=0):
+        print(" " * indent + f"Assign {self.name}")
+        self.value.dump(indent + 2)
+    def codegen(self, cg):
+        cg.visit_assign(self)
+
+class ExitNode(Node):
+    def __init__(self, line, col, value):
+        self.line, self.col, self.value = line, col, value
+    def dump(self, indent=0):
+        print(" " * indent + "Exit")
+        self.value.dump(indent + 2)
+    def codegen(self, cg):
+        cg.visit_exit(self)
+
+class ExprNode(Node): pass
+
+class BinOpNode(ExprNode):
+    def __init__(self, line, col, op, left, right):
+        self.line, self.col, self.op, self.left, self.right = line, col, op, left, right
+    def dump(self, indent=0):
+        print(" " * indent + f"BinOp {self.op}")
+        self.left.dump(indent + 2)
+        self.right.dump(indent + 2)
+    def codegen(self, cg):
+        return cg.visit_binop(self)
+
+class VarNode(ExprNode):
+    def __init__(self, line, col, name):
+        self.line, self.col, self.name = line, col, name
+    def dump(self, indent=0):
+        print(" " * indent + f"Var {self.name}")
+    def codegen(self, cg):
+        return cg.visit_var(self)
+
+class ConstNode(ExprNode):
+    def __init__(self, line, col, value):
+        self.line, self.col, self.value = line, col, value
+    def dump(self, indent=0):
+        print(" " * indent + f"Const {self.value}")
+    def codegen(self, cg):
+        return cg.visit_const(self)
 
 # ---------------------------------------------------------------------------
-# TASK 2 — Syntax / Semantics + Code Generation
+# TASK 2 & 4 — Parser
 # ---------------------------------------------------------------------------
+class Parser:
+    def __init__(self, lines):
+        self.lines = lines
+        self.toks = []
+        self.pos = 0
+        self.last_line = 1
+        self.last_col = 1
 
-def parse_and_build(lines):
-    """
-    Walk the token lines, validate syntax and semantics, build LLVM IR.
-    Returns the llvmlite module as a string.
+    def peek(self):
+        return self.toks[self.pos] if self.pos < len(self.toks) else None
 
-    Grammar (one statement per line):
-        decl   ::= 'i32' ['mut'] IDENT '{' expr '}'
-        assign ::= IDENT ':=' expr
-        exit   ::= 'exit' (IDENT | NUMBER)
-        expr   ::= val | val OP val
-        val    ::= IDENT | NUMBER
-        OP     ::= '+' | '-' | '*'
-    """
+    def eat(self):
+        tok = self.toks[self.pos]
+        self.pos += 1
+        self.last_line = tok.line
+        self.last_col = tok.col + len(tok.text)
+        return tok
 
-    # ---- llvmlite setup ----
-    i32  = ir.IntType(32)
-    i8   = ir.IntType(8)
-    i64  = ir.IntType(64)
-    void = ir.VoidType()
-
-    module = ir.Module(name="program")
-    module.triple = llvm.get_default_triple()
-
-    # Declare printf
-    printf_ty  = ir.FunctionType(i32, [ir.PointerType(i8)], var_arg=True)
-    printf_fn  = ir.Function(module, printf_ty, name="printf")
-
-    # Define main
-    main_ty    = ir.FunctionType(i32, [])
-    main_fn    = ir.Function(module, main_ty, name="main")
-    block      = main_fn.append_basic_block(name="entry")
-    builder    = ir.IRBuilder(block)
-
-    # Format string for printf
-    fmt_str    = b"Program exit with result %d\n\0"
-    fmt_const  = ir.Constant(ir.ArrayType(i8, len(fmt_str)),
-                             bytearray(fmt_str))
-    fmt_global = ir.GlobalVariable(module, fmt_const.type, name=".fmt")
-    fmt_global.global_constant = True
-    fmt_global.initializer     = fmt_const
-
-    def gep_fmt():
-        zero = ir.Constant(i64, 0)
-        return builder.gep(fmt_global, [zero, zero], inbounds=True)
-
-    # Symbol table: name -> {"alloca": ir.AllocaInstr, "mut": bool}
-    symbols = {}
-
-    def resolve_val(tok):
-        """Return an IR Value for a NUMBER or IDENT token."""
-        if tok.kind == "number":
-            return ir.Constant(i32, int(tok.text))
-        elif tok.kind == "ident":
-            if tok.text not in symbols:
-                raise CompileError(
-                    f"line {tok.line}:{tok.col}: variable '{tok.text}' is used before its declaration"
-                )
-            return builder.load(symbols[tok.text]["alloca"], name=tok.text)
+    def raise_err(self, msg):
+        tok = self.peek()
+        if tok is not None:
+            raise CompileError(f"line {tok.line}:{tok.col}: {msg}")
         else:
-            raise CompileError(
-                f"line {tok.line}:{tok.col}: expected a value, got '{tok.text}'"
-            )
+            raise CompileError(f"line {self.last_line}:{self.last_col}: {msg}")
 
-    def build_expr(toks, start_idx):
-        """
-        Parse expr starting at toks[start_idx].
-        Returns (ir.Value, next_index).
-        expr ::= val | val OP val
-        """
-        if start_idx >= len(toks):
-            raise CompileError("expected expression")
-        lhs = resolve_val(toks[start_idx])
-        idx = start_idx + 1
-        if idx < len(toks) and toks[idx].kind == "operator" and toks[idx].text in ("+", "-", "*"):
-            op_tok = toks[idx]
-            idx += 1
-            if idx >= len(toks):
-                raise CompileError(
-                    f"line {op_tok.line}:{op_tok.col}: expected value after '{op_tok.text}'"
-                )
-            rhs = resolve_val(toks[idx])
-            idx += 1
-            if op_tok.text == "+":
-                val = builder.add(lhs, rhs, name="add")
-            elif op_tok.text == "-":
-                val = builder.sub(lhs, rhs, name="sub")
+    def parse_program(self):
+        stmts = []
+        exit_node = None
+        for toks in self.lines:
+            if not toks:
+                continue
+            self.toks = toks
+            self.pos = 0
+            if self.toks:
+                self.last_line = self.toks[0].line
+            
+            tok = self.peek()
+            if tok.kind == "keyword" and tok.text == "exit":
+                if exit_node is not None:
+                    self.raise_err("duplicate 'exit' statement")
+                self.eat()
+                
+                tok2 = self.peek()
+                if tok2 is None:
+                    self.raise_err("expected a constant or a variable, found end of line")
+                elif tok2.kind not in ("number", "ident"):
+                    self.raise_err(f"expected a constant or a variable, got '{tok2.text}'")
+                    
+                val = self.parse_factor()
+                if self.peek() is not None:
+                    self.raise_err(f"unexpected '{self.peek().text}' after exit")
+                exit_node = ExitNode(tok.line, tok.col, val)
             else:
-                val = builder.mul(lhs, rhs, name="mul")
-            return val, idx
-        return lhs, idx
+                if exit_node is not None:
+                    self.raise_err("unexpected statement after exit")
+                stmts.append(self.parse_statement())
+                if self.peek() is not None:
+                    self.raise_err(f"unexpected '{self.peek().text}' after the statement")
 
-    exit_seen = False
+        if exit_node is None:
+            raise CompileError("program without exit")
+            
+        return ProgramNode(stmts, exit_node)
 
-    for lineno_0, toks in enumerate(lines):
-        if not toks:
-            continue   # blank line
-
-        # Determine statement kind from first token
-        first = toks[0]
-
-        # ---- Declaration: i32 [mut] IDENT { expr } ----
-        if first.kind == "keyword" and first.subkind == "typename":
-            idx = 1
-            is_mut = False
-
-            # optional 'mut'
-            if idx < len(toks) and toks[idx].kind == "keyword" and toks[idx].subkind == "specifier":
-                is_mut = True
-                idx += 1
-
-            # variable name
-            if idx >= len(toks) or toks[idx].kind != "ident":
-                t = toks[idx] if idx < len(toks) else first
-                raise CompileError(
-                    f"line {t.line}:{t.col}: expected variable name after type"
-                )
-            name_tok = toks[idx]; idx += 1
-
-            if name_tok.text in symbols:
-                raise CompileError(
-                    f"line {name_tok.line}:{name_tok.col}: variable '{name_tok.text}' is declared twice"
-                )
-
-            # mandatory '{'
-            if idx >= len(toks) or toks[idx].kind != "lbrace":
-                t = toks[idx] if idx < len(toks) else name_tok
-                raise CompileError(
-                    f"line {name_tok.line}:{name_tok.col}: variable '{name_tok.text}' needs an initialiser in {{}}"
-                )
-            lbrace_tok = toks[idx]; idx += 1
-
-            # Check { is closed on the same line
-            rbrace_idx = None
-            for j in range(idx, len(toks)):
-                if toks[j].kind == "rbrace":
-                    rbrace_idx = j
-                    break
-            if rbrace_idx is None:
-                raise CompileError(
-                    f"line {lbrace_tok.line}:{lbrace_tok.col}: '{{' is not closed before the end of the line"
-                )
-
-            # expression inside braces
-            val, expr_end = build_expr(toks, idx)
-            if expr_end != rbrace_idx:
-                t = toks[expr_end] if expr_end < len(toks) else lbrace_tok
-                raise CompileError(
-                    f"line {t.line}:{t.col}: unexpected token '{t.text}' inside initialiser"
-                )
-            idx = rbrace_idx + 1   # past '}'
-
-            # extra tokens?
-            if idx < len(toks):
-                t = toks[idx]
-                raise CompileError(
-                    f"line {t.line}:{t.col}: unexpected token '{t.text}' after declaration"
-                )
-
-            # Emit IR
-            alloca = builder.alloca(i32, name=name_tok.text)
-            builder.store(val, alloca)
-            symbols[name_tok.text] = {"alloca": alloca, "mut": is_mut}
-
-        # ---- Assignment: IDENT := expr ----
-        elif first.kind == "ident":
-            if len(toks) < 2 or toks[1].kind != "operator" or toks[1].text != ":=":
-                raise CompileError(
-                    f"line {first.line}:{first.col}: expected ':=' after '{first.text}'"
-                )
-            if first.text not in symbols:
-                raise CompileError(
-                    f"line {first.line}:{first.col}: variable '{first.text}' is used before its declaration"
-                )
-            if not symbols[first.text]["mut"]:
-                raise CompileError(
-                    f"line {first.line}:{first.col}: cannot assign to '{first.text}': it is not mut"
-                )
-            val, idx = build_expr(toks, 2)
-            if idx < len(toks):
-                t = toks[idx]
-                raise CompileError(
-                    f"line {t.line}:{t.col}: unexpected token '{t.text}' after assignment"
-                )
-            builder.store(val, symbols[first.text]["alloca"])
-
-        # ---- Exit: exit (IDENT | NUMBER) ----
-        elif first.kind == "keyword" and first.subkind == "statement":
-            if exit_seen:
-                raise CompileError(
-                    f"line {first.line}:{first.col}: duplicate 'exit' statement"
-                )
-            if len(toks) < 2:
-                raise CompileError(
-                    f"line {first.line}:{first.col}: 'exit' requires a value"
-                )
-            val_tok = toks[1]
-            val = resolve_val(val_tok)
-            if len(toks) > 2:
-                t = toks[2]
-                raise CompileError(
-                    f"line {t.line}:{t.col}: unexpected token '{t.text}' after exit"
-                )
-            # printf("Program exit with result %d\n", val)
-            builder.call(printf_fn, [gep_fmt(), val])
-            builder.ret(ir.Constant(i32, 0))
-            exit_seen = True
-
+    def parse_statement(self):
+        tok = self.peek()
+        if tok is None:
+            self.raise_err("expected statement")
+        if tok.kind == "keyword" and tok.text == "i32":
+            return self.parse_decl()
+        elif tok.kind == "ident":
+            return self.parse_assign()
         else:
-            raise CompileError(
-                f"line {first.line}:{first.col}: unrecognised statement starting with '{first.text}'"
-            )
+            self.raise_err(f"cannot start a statement with '{tok.text}'")
 
-    if not exit_seen:
-        raise CompileError("program has no 'exit' statement")
+    def parse_decl(self):
+        self.eat() # i32
+        mutable = False
+        tok = self.peek()
+        if tok is not None and tok.text == "mut":
+            self.eat()
+            mutable = True
+            
+        tok = self.peek()
+        if tok is None or tok.kind != "ident":
+            self.raise_err("expected a variable name")
+        name_tok = self.eat()
+        
+        tok = self.peek()
+        if tok is None or tok.kind != "lbrace":
+            raise CompileError(f"line {name_tok.line}:{name_tok.col}: variable '{name_tok.text}' needs an initialiser in {{}}")
+        lbrace_tok = self.eat()
+        
+        expr = self.parse_expr()
+        
+        tok = self.peek()
+        if tok is None or tok.kind != "rbrace":
+            raise CompileError(f"line {lbrace_tok.line}:{lbrace_tok.col}: '{{' is not closed before the end of the line")
+        self.eat()
+        
+        return DeclNode(name_tok.line, name_tok.col, name_tok.text, mutable, expr)
 
-    return str(module)
+    def parse_assign(self):
+        name_tok = self.eat()
+        tok = self.peek()
+        if tok is None or tok.text != ":=":
+            if tok is not None:
+                raise CompileError(f"line {tok.line}:{tok.col}: expected ':=' after '{name_tok.text}', got '{tok.text}'")
+            else:
+                self.raise_err(f"expected ':=' after '{name_tok.text}', found end of line")
+        self.eat()
+        expr = self.parse_expr()
+        return AssignNode(name_tok.line, name_tok.col, name_tok.text, expr)
 
+    def parse_expr(self):
+        node = self.parse_term()
+        while (tok := self.peek()) is not None and tok.kind == "op" and tok.text in ("+", "-"):
+            self.eat()
+            node = BinOpNode(tok.line, tok.col, tok.text, node, self.parse_term())
+        return node
+
+    def parse_term(self):
+        node = self.parse_factor()
+        while (tok := self.peek()) is not None and tok.kind == "op" and tok.text == "*":
+            self.eat()
+            node = BinOpNode(tok.line, tok.col, tok.text, node, self.parse_factor())
+        return node
+
+    def parse_factor(self):
+        tok = self.peek()
+        if tok is None:
+            self.raise_err("expected a constant or a variable, found end of line")
+        if tok.kind == "number":
+            self.eat()
+            return ConstNode(tok.line, tok.col, int(tok.text))
+        elif tok.kind == "ident":
+            self.eat()
+            return VarNode(tok.line, tok.col, tok.text)
+        else:
+            self.raise_err(f"expected a constant or a variable, got '{tok.text}'")
+
+# ---------------------------------------------------------------------------
+# TASK 3 — Code Generation
+# ---------------------------------------------------------------------------
+class CodeGen:
+    def __init__(self):
+        self.i32 = ir.IntType(32)
+        self.i8 = ir.IntType(8)
+        self.i64 = ir.IntType(64)
+        
+        self.module = ir.Module(name="program")
+        self.module.triple = llvm.get_default_triple()
+        
+        self.printf_ty = ir.FunctionType(self.i32, [ir.PointerType(self.i8)], var_arg=True)
+        self.printf_fn = ir.Function(self.module, self.printf_ty, name="printf")
+        
+        main_ty = ir.FunctionType(self.i32, [])
+        self.main_fn = ir.Function(self.module, main_ty, name="main")
+        block = self.main_fn.append_basic_block(name="entry")
+        self.builder = ir.IRBuilder(block)
+        
+        fmt_str = b"Program exit with result %d\n\0"
+        fmt_const = ir.Constant(ir.ArrayType(self.i8, len(fmt_str)), bytearray(fmt_str))
+        self.fmt_global = ir.GlobalVariable(self.module, fmt_const.type, name=".fmt")
+        self.fmt_global.global_constant = True
+        self.fmt_global.initializer = fmt_const
+        
+        self.symbols = {}
+
+    def gep_fmt(self):
+        zero = ir.Constant(self.i64, 0)
+        return self.builder.gep(self.fmt_global, [zero, zero], inbounds=True)
+
+    def visit_decl(self, node):
+        if node.name in self.symbols:
+            raise CompileError(f"line {node.line}:{node.col}: variable '{node.name}' is declared twice")
+        val = node.init.codegen(self)
+        alloca = self.builder.alloca(self.i32, name=node.name)
+        self.builder.store(val, alloca)
+        self.symbols[node.name] = {"alloca": alloca, "mut": node.mutable}
+
+    def visit_assign(self, node):
+        if node.name not in self.symbols:
+            raise CompileError(f"line {node.line}:{node.col}: variable '{node.name}' is used before its declaration")
+        if not self.symbols[node.name]["mut"]:
+            raise CompileError(f"line {node.line}:{node.col}: cannot assign to '{node.name}': it is not mut")
+        val = node.value.codegen(self)
+        self.builder.store(val, self.symbols[node.name]["alloca"])
+
+    def visit_exit(self, node):
+        val = node.value.codegen(self)
+        self.builder.call(self.printf_fn, [self.gep_fmt(), val])
+        self.builder.ret(ir.Constant(self.i32, 0))
+
+    def visit_binop(self, node):
+        left_val = node.left.codegen(self)
+        right_val = node.right.codegen(self)
+        if node.op == "+":
+            return self.builder.add(left_val, right_val, name="add")
+        elif node.op == "-":
+            return self.builder.sub(left_val, right_val, name="sub")
+        elif node.op == "*":
+            return self.builder.mul(left_val, right_val, name="mul")
+        else:
+            raise CompileError(f"unknown operator {node.op}")
+
+    def visit_var(self, node):
+        if node.name not in self.symbols:
+            raise CompileError(f"line {node.line}:{node.col}: variable '{node.name}' is used before its declaration")
+        return self.builder.load(self.symbols[node.name]["alloca"], name=node.name)
+
+    def visit_const(self, node):
+        return ir.Constant(self.i32, node.value)
 
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
-
 def main():
-    if len(sys.argv) != 3:
-        print("Usage: python3 compiler.py input.txt output.ll", file=sys.stderr)
+    if len(sys.argv) < 2:
+        print("Usage: python3 compiler.py [--ast] input.txt [output.ll]", file=sys.stderr)
         sys.exit(1)
 
-    src_path = sys.argv[1]
-    out_path = sys.argv[2]
+    dump_ast = False
+    args = sys.argv[1:]
+    if args[0] == "--ast":
+        dump_ast = True
+        args = args[1:]
+        if len(args) != 1:
+            print("Usage: python3 compiler.py --ast input.txt", file=sys.stderr)
+            sys.exit(1)
+        src_path = args[0]
+        out_path = None
+    else:
+        if len(args) != 2:
+            print("Usage: python3 compiler.py input.txt output.ll", file=sys.stderr)
+            sys.exit(1)
+        src_path = args[0]
+        out_path = args[1]
 
-    # Read source
     try:
         with open(src_path, "rb") as f:
             data = f.read()
@@ -471,32 +452,34 @@ def main():
         print(f"compilation error: cannot read '{src_path}': {e}", file=sys.stderr)
         sys.exit(1)
 
-    # Lex
+    import os
     try:
         lines = lex(data)
+        if os.environ.get("LEX_DUMP"):
+            dump_tokens(lines)
+            sys.exit(0)
+            
+        parser = Parser(lines)
+        ast = parser.parse_program()
+        
+        if dump_ast:
+            ast.dump()
+            sys.exit(0)
+            
+        cg = CodeGen()
+        ast.codegen(cg)
+        ir_text = str(cg.module)
+        
     except CompileError as e:
         die(str(e))
 
-    # Debug dump when called with --lex-dump env var
-    import os
-    if os.environ.get("LEX_DUMP"):
-        dump_tokens(lines)
-        sys.exit(0)
-
-    # Parse + build IR
     try:
-        ir_text = parse_and_build(lines)
-    except CompileError as e:
-        die(str(e))
-
-    # Write output
-    try:
-        with open(out_path, "w") as f:
-            f.write(ir_text)
+        if out_path:
+            with open(out_path, "w") as f:
+                f.write(ir_text)
     except OSError as e:
         print(f"compilation error: cannot write '{out_path}': {e}", file=sys.stderr)
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()

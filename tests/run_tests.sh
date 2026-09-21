@@ -20,16 +20,31 @@ run_test() {
     if [[ "$name" == valid_* ]]; then
         # Should compile and run successfully
         if python3 "$COMPILER" "$src" "$TMPOUT" 2>"$TMPSTDERR"; then
-            actual=$(lli "$TMPOUT" 2>&1)
-            expected=$(cat "$expected_file")
-            if [[ "$actual" == "$expected" ]]; then
-                echo "  PASS  $name"
-                ((pass++))
-            else
-                echo "  FAIL  $name"
-                echo "        expected: $expected"
-                echo "        actual:   $actual"
-                ((fail++))
+            ast_ok=1
+            if [[ -f "${src%.txt}.ast" ]]; then
+                actual_ast=$(python3 "$COMPILER" --ast "$src" 2>&1)
+                expected_ast=$(cat "${src%.txt}.ast")
+                if [[ "$actual_ast" != "$expected_ast" ]]; then
+                    ast_ok=0
+                    echo "  FAIL  $name (AST dump mismatch)"
+                    echo "        expected AST: $expected_ast"
+                    echo "        actual AST:   $actual_ast"
+                    ((fail++))
+                fi
+            fi
+
+            if [[ $ast_ok -eq 1 ]]; then
+                actual=$(lli "$TMPOUT" 2>&1)
+                expected=$(cat "$expected_file")
+                if [[ "$actual" == "$expected" ]]; then
+                    echo "  PASS  $name"
+                    ((pass++))
+                else
+                    echo "  FAIL  $name"
+                    echo "        expected: $expected"
+                    echo "        actual:   $actual"
+                    ((fail++))
+                fi
             fi
         else
             echo "  FAIL  $name  (compilation failed unexpectedly)"

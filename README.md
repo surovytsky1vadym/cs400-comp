@@ -1,4 +1,4 @@
-# CS400 Compiler — Practice 2
+# CS400 Compiler — Practice 3
 
 A hand-written lexer + compiler for a small statically-typed language, targeting LLVM IR via `llvmlite`.
 

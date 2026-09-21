@@ -1,42 +1,16 @@
-AI Usage Log — Practice 2
-==========================
+AI Usage Log — Practice 3
 
-Tool: Antigravity IDE (Google Deepmind)
-Model: Claude Sonnet 4.6 (Thinking)
+Tools: Antigravity (Claude Sonnet 4.6), Grok.
 
-Session summary
----------------
-1. Read the practice PDF (w02-practice (1).pdf) via browser and pdftotext.
-2. Reviewed the spec: Task 1 = hand-written byte-level lexer; Task 2 = syntax/semantics + llvmlite code gen.
-3. Generated implementation plan and received student approval.
-4. AI wrote compiler.py end-to-end:
-   - Token class, CompileError, is_alpha/is_digit helpers
-   - lex(): 4-state machine (START, IDENT, NUMBER, COLON), byte-by-byte loop
-   - parse_and_build(): validates declarations, assignments, exit; emits llvmlite IR
-   - main(): CLI wrapper, LEX_DUMP debug mode
-5. AI created all 10 test cases (5 valid, 5 invalid) and run_tests.sh.
-6. AI set up Git: initial commit on main (Practice 1 label), practice-2 branch.
+Student
+- Architecture and decisions: EBNF levels, recursive descent, AST from the handout,
+  codegen as a tree walk, precedence/associativity from the grammar, line:column errors.
+- First test: tests/valid_p3_basic.txt (2 + 3 * 4).
+- Multipass setup and the final run (20/20, result 120).
 
-What the AI produced
---------------------
-- compiler.py (full file)
-- README.md
-- tests/valid_exit_70.txt and .expected
-- tests/valid_const.txt and .expected
-- tests/valid_operations.txt and .expected
-- tests/valid_spacing.txt and .expected
-- tests/valid_exit_const.txt and .expected
-- tests/invalid_unknown_byte.txt and .expected
-- tests/invalid_unclosed_brace.txt and .expected
-- tests/invalid_assign_const.txt and .expected
-- tests/invalid_use_before_decl.txt and .expected
-- tests/invalid_missing_init.txt and .expected
-- tests/run_tests.sh
+AI
+- Everything after that first test: grammar.ebnf, parser, AST dump, CodeGen,
+  the rest of tests/, expected/.ast files.
 
-What the student verified / will verify
-----------------------------------------
-- Reviewed the generated code and understood the lexer state machine logic.
-- Will run: LEX_DUMP=1 python3 compiler.py tests/valid_exit_70.txt /dev/null
-  and compare the token list with the spec's worked example.
-- Will run lli on the compiled output to verify "Program exit with result 70".
-- Will push to GitHub/GitLab and open a PR to main.
+Constraints kept: no parser generators, no regex, no eval, IR only via llvmlite.ir.
+Practice 2 lexer unchanged.

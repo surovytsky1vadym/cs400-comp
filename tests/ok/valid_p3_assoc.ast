@@ -1,5 +1,5 @@
 Program
-  Decl a mut
+  Decl a i32 mut
     BinOp -
       BinOp -
         Const 10

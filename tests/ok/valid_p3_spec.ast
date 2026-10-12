@@ -1,11 +1,11 @@
 Program
-  Decl x const
+  Decl x i32 const
     BinOp +
       Const 2
       BinOp *
         Const 3
         Const 4
-  Decl a mut
+  Decl a i32 mut
     BinOp -
       BinOp -
         Const 10
@@ -17,7 +17,7 @@ Program
         Var a
         Const 2
       Const 1
-  Decl z const
+  Decl z i32 const
     BinOp -
       BinOp *
         Var x

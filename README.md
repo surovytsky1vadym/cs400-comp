@@ -1,59 +1,24 @@
-# CS400 Compiler — Practice 3
+# CS400 Compiler — Practice 4
 
-A hand-written lexer + compiler for a small statically-typed language, targeting LLVM IR via `llvmlite`.
-
-## Requirements
-
-```
-pip install llvmlite
-```
-
-`lli` (LLVM interpreter) must be on your PATH for running `.ll` files.
-
-## Usage
+Hand-written lexer, recursive-descent parser, a separate semantic pass (`SemanticChecker`)
+and code generation via `llvmlite.ir`.
 
 ```bash
-# Compile a source file to LLVM IR
-python3 compiler.py input.txt output.ll
-
-# Run the IR directly (fastest for testing)
-lli output.ll
-
-# Or compile to a native binary
-llc -filetype=obj -relocation-model=pic output.ll -o output.o
-clang -fPIE output.o -o program && ./program
+python3 compiler.py input.txt output.ll   # compile
+python3 compiler.py --ast input.txt       # print the tree
+lli output.ll                             # run
+python3 check.py                          # run tests/ok and tests/err
 ```
 
-On any lexical, syntactic, or semantic error the compiler prints one line to stderr:
+Types: `i32`, `i64`, `bool` (`true`/`false`). Operators `+ - *` (integers, result is the wider type),
+`==` `!=` (two integers or two bools, result `bool`). The only implicit conversion is `i32 → i64` (`sext`).
+Errors: `compilation error: line L:C: ...` on stderr, non-zero exit, no output file.
 
+## Warm-up (types on paper)
 ```
-compilation error: line 2:8: unexpected byte '$'
-```
-
-and exits with a non-zero code without writing the output file.
-
-## Debug: dump token list
-
-```bash
-LEX_DUMP=1 python3 compiler.py input.txt /dev/null
-```
-
-## Language
-
-One statement per line. All variables are 32-bit integers.
-
-| Statement | Meaning |
-|-----------|---------|
-| `i32 x{5}` | Declare const variable `x`, initialised to `5` |
-| `i32 mut y{10}` | Declare mutable variable `y` |
-| `y := expr` | Assign to a `mut` variable |
-| `exit val` | Print result and exit |
-
-Expressions in `{...}` and on the right of `:=`: a constant, a variable, or one binary operation (`+`, `-`, `*`) on two values.
-
-## Running the tests
-
-```bash
-chmod +x tests/run_tests.sh
-bash tests/run_tests.sh
+i32 a{10}        i32
+i64 b{a}         i32 -> widened to i64
+bool c{a == b}   bool
+i32 d{a + b}     i64  <- line 4 rejected: a + b is i64, and an i64 never narrows into i32
+bool e{c == 1}   (would also be rejected: bool compared with i32)
 ```

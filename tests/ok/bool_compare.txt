@@ -1,0 +1,5 @@
+bool t{true}
+bool f{false}
+bool mut r{t != f}
+r := r == true
+exit r

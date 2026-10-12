@@ -1,13 +1,13 @@
 Program
-  Decl x const
+  Decl x i32 const
     Const 0
-  Decl y mut
+  Decl y i32 mut
     Const 10
-  Decl z const
+  Decl z i32 const
     BinOp +
       Const 2
       Const 5
-  Decl t mut
+  Decl t i32 mut
     BinOp +
       Var x
       Const 10

@@ -1,3 +1,17 @@
+AI Usage Log — Practice 4
+
+Tools: Claude Code (Claude Opus 5.5).
+Prompt: "complete practices 4–6" with the w04 handout PDF.
+
+AI wrote: i64/bool/true/false and ==/!= in the lexer and parser, the SemanticChecker class
+(symbol table, type rules, constant range checks, the three old checks moved out of codegen),
+typed CodeGen (coerce/sext, icmp, select for bool exit, %lld printf), check.py, the move of the
+old tests into tests/ok and tests/err, and the new Practice 4 tests.
+Changed by the student: <fill in>
+
+Constraints kept: no parser generators, no regex, no eval, IR only via llvmlite.ir (str(module)).
+
+----------------------------------------------------------------------
 AI Usage Log — Practice 3
 
 Tools: Antigravity (Claude Sonnet 4.6), Grok.

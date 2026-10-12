@@ -1,53 +1,31 @@
 AI Usage Log — Practice 6
 
 Tools: Claude Code (Claude Opus 5.5).
-Prompt: "complete practices 4–6" with the w06 handout PDF.
-
-AI wrote: struct/fn/,/(/)/./-> in the lexer, struct and fn parsing, field chains, calls and nested {}
-initialisers in the parser, struct/function/call/field/mut-chain checks in SemanticChecker, named struct
-types, gep, functions with entry-block parameter slots, ret, call and insertvalue in CodeGen, the
-Practice 6 tests.
-Changed by the student: <fill in>
-
-----------------------------------------------------------------------
-AI Usage Log — Practice 5
-
-Tools: Claude Code (Claude Opus 5.5).
-Prompt: "complete practices 4–6" with the w05 handout PDF.
-
-AI wrote: if/else/while/! in the lexer, the line-cursor parser (peek_line/next_line, Block/If/While/Not
-nodes), the scope stack in SemanticChecker, basic-block codegen (cbranch, entry-block allocas,
-terminator checks), the move to src/compiler.py and the Practice 5 tests.
-Changed by the student: <fill in>
-
-----------------------------------------------------------------------
-AI Usage Log — Practice 4
-
-Tools: Claude Code (Claude Opus 5.5).
-Prompt: "complete practices 4–6" with the w04 handout PDF.
-
-AI wrote: i64/bool/true/false and ==/!= in the lexer and parser, the SemanticChecker class
-(symbol table, type rules, constant range checks, the three old checks moved out of codegen),
-typed CodeGen (coerce/sext, icmp, select for bool exit, %lld printf), check.py, the move of the
-old tests into tests/ok and tests/err, and the new Practice 4 tests.
-Changed by the student: <fill in>
-
-Constraints kept: no parser generators, no regex, no eval, IR only via llvmlite.ir (str(module)).
-
-----------------------------------------------------------------------
-AI Usage Log — Practice 3
-
-Tools: Antigravity (Claude Sonnet 4.6), Grok.
 
 Student
-- Architecture and decisions: EBNF levels, recursive descent, AST from the handout,
-  codegen as a tree walk, precedence/associativity from the grammar, line:column errors.
-- First test: tests/valid_p3_basic.txt (2 + 3 * 4).
-- Multipass setup and the final run (20/20, result 120).
+- Architecture and decisions:
+  - program order: structs first, then functions, then statements; a function
+    after a statement is a compile error (tests/err/fn_after_statement);
+  - function parameters are immutable; assigning to one is a compile error
+    (tests/err/fn_param_not_mut);
+  - structs are passed and returned by value: parameters are copied into
+    entry-block slots, struct values are built with insertvalue.
+- Verification: checked the .expected outputs of the Practice 6 tests by hand
+  (exit codes of the valid programs, error messages and line:column positions
+  of the error programs) before accepting them.
+- Review and acceptance: ran the full suite (tests/ok, tests/err), checked the
+  generated IR and AST dumps, committed the result.
 
 AI
-- Everything after that first test: grammar.ebnf, parser, AST dump, CodeGen,
-  the rest of tests/, expected/.ast files.
-
-Constraints kept: no parser generators, no regex, no eval, IR only via llvmlite.ir.
-Practice 2 lexer unchanged.
+- grammar.ebnf, Lexer: struct, fn, ",", "(", ")", ".", "->".
+- Parser: struct and fn definitions (top level only, before statements), field
+  chains (a.b.c), calls with argument lists, nested {} initialisers.
+- SemanticChecker:
+  - struct table: unknown fields, wrong initialiser count, {} used for builtin types;
+  - function table: argument count, argument/parameter types, exit type,
+    parameters immutable, no top-level variables inside functions;
+  - mutability along field chains (const object / const link).
+- Tests: 11 error tests in tests/err (fn_*, struct_*), 8 valid tests in tests/ok
+  (recursive fib, nested calls, i64 params, struct params/results, field writes,
+  nested chains and initialisers) with .expected and .ast files.
+- README update.

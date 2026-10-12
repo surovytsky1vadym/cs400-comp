@@ -25,6 +25,8 @@ AI
   - function table: argument count, argument/parameter types, exit type,
     parameters immutable, no top-level variables inside functions;
   - mutability along field chains (const object / const link).
+- CodeGen: named LLVM struct types, gep for field reads/writes, functions with
+  parameters stored to entry-block slots, ret, call, insertvalue for struct values.
 - Tests: 11 error tests in tests/err (fn_*, struct_*), 8 valid tests in tests/ok
   (recursive fib, nested calls, i64 params, struct params/results, field writes,
   nested chains and initialisers) with .expected and .ast files.

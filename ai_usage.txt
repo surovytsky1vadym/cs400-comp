@@ -1,3 +1,14 @@
+AI Usage Log — Practice 5
+
+Tools: Claude Code (Claude Opus 5.5).
+Prompt: "complete practices 4–6" with the w05 handout PDF.
+
+AI wrote: if/else/while/! in the lexer, the line-cursor parser (peek_line/next_line, Block/If/While/Not
+nodes), the scope stack in SemanticChecker, basic-block codegen (cbranch, entry-block allocas,
+terminator checks), the move to src/compiler.py and the Practice 5 tests.
+Changed by the student: <fill in>
+
+----------------------------------------------------------------------
 AI Usage Log — Practice 4
 
 Tools: Claude Code (Claude Opus 5.5).

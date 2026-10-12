@@ -1,0 +1,6 @@
+i32 mut a{1}
+if a == 1
+{
+    a := a + 41
+}
+exit a

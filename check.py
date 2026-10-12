@@ -16,7 +16,7 @@ import sys
 import tempfile
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-COMPILER = os.path.join(ROOT, "compiler.py")
+COMPILER = os.path.join(ROOT, "src", "compiler.py")
 TESTS = os.path.join(ROOT, "tests")
 LLI = os.environ.get("LLI", "lli")
 PY = sys.executable

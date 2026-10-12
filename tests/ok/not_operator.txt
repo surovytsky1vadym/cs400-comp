@@ -1,0 +1,10 @@
+bool a{true}
+bool b{false}
+bool c{!a}
+bool mut d{! b}
+d := !c
+if !c
+{
+    exit d
+}
+exit 0

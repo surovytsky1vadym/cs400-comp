@@ -1,11 +1,11 @@
-# CS400 Compiler — Practice 4
+# CS400 Compiler — Practice 5
 
 Hand-written lexer, recursive-descent parser, a separate semantic pass (`SemanticChecker`)
 and code generation via `llvmlite.ir`.
 
 ```bash
-python3 compiler.py input.txt output.ll   # compile
-python3 compiler.py --ast input.txt       # print the tree
+python3 src/compiler.py input.txt output.ll   # compile
+python3 src/compiler.py --ast input.txt       # print the tree
 lli output.ll                             # run
 python3 check.py                          # run tests/ok and tests/err
 ```
@@ -22,3 +22,12 @@ bool c{a == b}   bool
 i32 d{a + b}     i64  <- line 4 rejected: a + b is i64, and an i64 never narrows into i32
 bool e{c == 1}   (would also be rejected: bool compared with i32)
 ```
+
+## Practice 5: if / else / while, scopes, basic blocks
+A block is a new frame in the semantic pass (shadowing with any type is allowed) and new basic
+blocks in the IR (`then`/`else`/`merge`, `cond`/`body`/`end`). Every `alloca` is placed in the entry block.
+`opt -passes=mem2reg -S output.ll` turns the slots into registers (see `tests/ok/if-else_phi.txt`).
+
+Warm-up: the inner `exit x` refers to `i64 x{20}` and prints 20; the middle `exit x` (bool x) and the
+last `exit x` (i32 x) are never reached. The pass pushes and pops 2 frames; the IR needs 5 basic blocks
+(entry, then, merge for the outer if, then, merge for the inner one).

@@ -1,0 +1,6 @@
+bool c{true}
+if c
+{
+    i32 inner{5}
+}
+exit inner

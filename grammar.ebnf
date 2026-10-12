@@ -1,0 +1,20 @@
+program    ::= { struct } { fn } { statement } exit
+struct     ::= "struct" ident NL "{" NL field_decl { field_decl } "}" NL
+field_decl ::= type [ "mut" ] ident NL
+fn         ::= "fn" ident ":=" "(" [ type ident { "," type ident } ] ")" "->" type NL block
+statement  ::= decl | assign | if | while
+decl       ::= type [ "mut" ] ident init_list
+init_list  ::= "{" init { "," init } "}"
+init       ::= expr | init_list
+type       ::= "i32" | "i64" | "bool" | ident
+assign     ::= ident { "." ident } ":=" expr
+if         ::= "if" expr NL block [ "else" NL block ]
+while      ::= "while" expr NL block
+block      ::= "{" NL { statement } [ exit NL ] "}" NL      (not empty)
+exit       ::= "exit" factor
+expr       ::= arith [ ( "==" | "!=" ) arith ]
+arith      ::= term { ( "+" | "-" ) term }
+term       ::= factor { "*" factor }
+factor     ::= number | "true" | "false" | ident | field | call | "!" factor
+field      ::= ident "." ident { "." ident }
+call       ::= ident "(" [ expr { "," expr } ] ")"

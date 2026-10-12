@@ -1,0 +1,6 @@
+i32 a{1}
+else
+{
+    exit 1
+}
+exit a

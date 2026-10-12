@@ -1,59 +1,39 @@
-# CS400 Compiler — Practice 2
+# CS400 Compiler — Practice 6
 
-A hand-written lexer + compiler for a small statically-typed language, targeting LLVM IR via `llvmlite`.
-
-## Requirements
-
-```
-pip install llvmlite
-```
-
-`lli` (LLVM interpreter) must be on your PATH for running `.ll` files.
-
-## Usage
+Hand-written lexer, recursive-descent parser, a separate semantic pass (`SemanticChecker`)
+and code generation via `llvmlite.ir`.
 
 ```bash
-# Compile a source file to LLVM IR
-python3 compiler.py input.txt output.ll
-
-# Run the IR directly (fastest for testing)
-lli output.ll
-
-# Or compile to a native binary
-llc -filetype=obj -relocation-model=pic output.ll -o output.o
-clang -fPIE output.o -o program && ./program
+python3 src/compiler.py input.txt output.ll   # compile
+python3 src/compiler.py --ast input.txt       # print the tree
+lli output.ll                             # run
+python3 check.py                          # run tests/ok and tests/err
 ```
 
-On any lexical, syntactic, or semantic error the compiler prints one line to stderr:
+Types: `i32`, `i64`, `bool` (`true`/`false`). Operators `+ - *` (integers, result is the wider type),
+`==` `!=` (two integers or two bools, result `bool`). The only implicit conversion is `i32 → i64` (`sext`).
+Errors: `compilation error: line L:C: ...` on stderr, non-zero exit, no output file.
 
+## Warm-up (types on paper)
 ```
-compilation error: line 2:8: unexpected byte '$'
+i32 a{10}        i32
+i64 b{a}         i32 -> widened to i64
+bool c{a == b}   bool
+i32 d{a + b}     i64  <- line 4 rejected: a + b is i64, and an i64 never narrows into i32
+bool e{c == 1}   (would also be rejected: bool compared with i32)
 ```
 
-and exits with a non-zero code without writing the output file.
+## Practice 5: if / else / while, scopes, basic blocks
+A block is a new frame in the semantic pass (shadowing with any type is allowed) and new basic
+blocks in the IR (`then`/`else`/`merge`, `cond`/`body`/`end`). Every `alloca` is placed in the entry block.
+`opt -passes=mem2reg -S output.ll` turns the slots into registers (see `tests/ok/if-else_phi.txt`).
 
-## Debug: dump token list
+Warm-up: the inner `exit x` refers to `i64 x{20}` and prints 20; the middle `exit x` (bool x) and the
+last `exit x` (i32 x) are never reached. The pass pushes and pops 2 frames; the IR needs 5 basic blocks
+(entry, then, merge for the outer if, then, merge for the inner one).
 
-```bash
-LEX_DUMP=1 python3 compiler.py input.txt /dev/null
-```
-
-## Language
-
-One statement per line. All variables are 32-bit integers.
-
-| Statement | Meaning |
-|-----------|---------|
-| `i32 x{5}` | Declare const variable `x`, initialised to `5` |
-| `i32 mut y{10}` | Declare mutable variable `y` |
-| `y := expr` | Assign to a `mut` variable |
-| `exit val` | Print result and exit |
-
-Expressions in `{...}` and on the right of `:=`: a constant, a variable, or one binary operation (`+`, `-`, `*`) on two values.
-
-## Running the tests
-
-```bash
-chmod +x tests/run_tests.sh
-bash tests/run_tests.sh
-```
+## Practice 6: structs and functions
+`struct` declarations become named LLVM types (`%"Point" = type {i32, i32}`); fields are reached with
+`gep` by the index the semantic pass found. Functions are collected first (signatures), then checked
+and generated; each becomes `fn_<name>` in the module, with parameters copied into entry-block slots.
+`exit` inside a function is `ret`. Nested `{}` initialisers are built with `insertvalue`.

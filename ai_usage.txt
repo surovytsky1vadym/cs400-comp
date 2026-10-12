@@ -1,42 +1,33 @@
-AI Usage Log — Practice 2
-==========================
+AI Usage Log — Practice 6
 
-Tool: Antigravity IDE (Google Deepmind)
-Model: Claude Sonnet 4.6 (Thinking)
+Tools: Claude Code (Claude Opus 5.5).
 
-Session summary
----------------
-1. Read the practice PDF (w02-practice (1).pdf) via browser and pdftotext.
-2. Reviewed the spec: Task 1 = hand-written byte-level lexer; Task 2 = syntax/semantics + llvmlite code gen.
-3. Generated implementation plan and received student approval.
-4. AI wrote compiler.py end-to-end:
-   - Token class, CompileError, is_alpha/is_digit helpers
-   - lex(): 4-state machine (START, IDENT, NUMBER, COLON), byte-by-byte loop
-   - parse_and_build(): validates declarations, assignments, exit; emits llvmlite IR
-   - main(): CLI wrapper, LEX_DUMP debug mode
-5. AI created all 10 test cases (5 valid, 5 invalid) and run_tests.sh.
-6. AI set up Git: initial commit on main (Practice 1 label), practice-2 branch.
+Student
+- Architecture and decisions:
+  - program order: structs first, then functions, then statements; a function
+    after a statement is a compile error (tests/err/fn_after_statement);
+  - function parameters are immutable; assigning to one is a compile error
+    (tests/err/fn_param_not_mut);
+  - structs are passed and returned by value: parameters are copied into
+    entry-block slots, struct values are built with insertvalue.
+- Verification: checked the .expected outputs of the Practice 6 tests by hand
+  (exit codes of the valid programs, error messages and line:column positions
+  of the error programs) before accepting them.
+- Review and acceptance: ran the full suite (tests/ok, tests/err), checked the
+  generated IR and AST dumps, committed the result.
 
-What the AI produced
---------------------
-- compiler.py (full file)
-- README.md
-- tests/valid_exit_70.txt and .expected
-- tests/valid_const.txt and .expected
-- tests/valid_operations.txt and .expected
-- tests/valid_spacing.txt and .expected
-- tests/valid_exit_const.txt and .expected
-- tests/invalid_unknown_byte.txt and .expected
-- tests/invalid_unclosed_brace.txt and .expected
-- tests/invalid_assign_const.txt and .expected
-- tests/invalid_use_before_decl.txt and .expected
-- tests/invalid_missing_init.txt and .expected
-- tests/run_tests.sh
-
-What the student verified / will verify
-----------------------------------------
-- Reviewed the generated code and understood the lexer state machine logic.
-- Will run: LEX_DUMP=1 python3 compiler.py tests/valid_exit_70.txt /dev/null
-  and compare the token list with the spec's worked example.
-- Will run lli on the compiled output to verify "Program exit with result 70".
-- Will push to GitHub/GitLab and open a PR to main.
+AI
+- grammar.ebnf, Lexer: struct, fn, ",", "(", ")", ".", "->".
+- Parser: struct and fn definitions (top level only, before statements), field
+  chains (a.b.c), calls with argument lists, nested {} initialisers.
+- SemanticChecker:
+  - struct table: unknown fields, wrong initialiser count, {} used for builtin types;
+  - function table: argument count, argument/parameter types, exit type,
+    parameters immutable, no top-level variables inside functions;
+  - mutability along field chains (const object / const link).
+- CodeGen: named LLVM struct types, gep for field reads/writes, functions with
+  parameters stored to entry-block slots, ret, call, insertvalue for struct values.
+- Tests: 11 error tests in tests/err (fn_*, struct_*), 8 valid tests in tests/ok
+  (recursive fib, nested calls, i64 params, struct params/results, field writes,
+  nested chains and initialisers) with .expected and .ast files.
+- README update.

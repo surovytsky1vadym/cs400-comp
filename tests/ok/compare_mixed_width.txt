@@ -1,0 +1,6 @@
+i32 a{10}
+i64 b{10}
+bool same{a == b}
+bool diff{a + 1 != b * 1}
+bool both{same == diff}
+exit both

@@ -1,0 +1,10 @@
+fn inc := (i32 v) -> i32
+{
+    i32 r{v + 1}
+    exit r
+}
+fn later := (i32 v) -> i32
+{
+    exit inc(inc(v))
+}
+exit later(inc(1))

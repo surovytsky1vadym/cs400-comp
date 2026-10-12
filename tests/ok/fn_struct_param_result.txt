@@ -1,0 +1,17 @@
+struct Point
+{
+    i32 mut x
+    i32 mut y
+}
+fn swap := (Point p) -> Point
+{
+    Point r{p.y, p.x}
+    exit r
+}
+fn sumOf := (Point p) -> i64
+{
+    exit p.x
+}
+Point a{3, 4}
+Point s{swap(a)}
+exit s.x

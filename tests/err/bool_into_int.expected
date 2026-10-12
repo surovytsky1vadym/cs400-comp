@@ -1,0 +1,1 @@
+compilation error: line 3:1: cannot assign to 'a' of type i64 with a value of type bool

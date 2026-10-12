@@ -1,3 +1,15 @@
+AI Usage Log — Practice 6
+
+Tools: Claude Code (Claude Opus 5.5).
+Prompt: "complete practices 4–6" with the w06 handout PDF.
+
+AI wrote: struct/fn/,/(/)/./-> in the lexer, struct and fn parsing, field chains, calls and nested {}
+initialisers in the parser, struct/function/call/field/mut-chain checks in SemanticChecker, named struct
+types, gep, functions with entry-block parameter slots, ret, call and insertvalue in CodeGen, the
+Practice 6 tests.
+Changed by the student: <fill in>
+
+----------------------------------------------------------------------
 AI Usage Log — Practice 5
 
 Tools: Claude Code (Claude Opus 5.5).

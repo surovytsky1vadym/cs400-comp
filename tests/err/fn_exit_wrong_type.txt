@@ -1,0 +1,5 @@
+fn f := (i32 a) -> bool
+{
+    exit a
+}
+exit f(1)

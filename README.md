@@ -1,4 +1,4 @@
-# CS400 Compiler — Practice 5
+# CS400 Compiler — Practice 6
 
 Hand-written lexer, recursive-descent parser, a separate semantic pass (`SemanticChecker`)
 and code generation via `llvmlite.ir`.
@@ -31,3 +31,9 @@ blocks in the IR (`then`/`else`/`merge`, `cond`/`body`/`end`). Every `alloca` is
 Warm-up: the inner `exit x` refers to `i64 x{20}` and prints 20; the middle `exit x` (bool x) and the
 last `exit x` (i32 x) are never reached. The pass pushes and pops 2 frames; the IR needs 5 basic blocks
 (entry, then, merge for the outer if, then, merge for the inner one).
+
+## Practice 6: structs and functions
+`struct` declarations become named LLVM types (`%"Point" = type {i32, i32}`); fields are reached with
+`gep` by the index the semantic pass found. Functions are collected first (signatures), then checked
+and generated; each becomes `fn_<name>` in the module, with parameters copied into entry-block slots.
+`exit` inside a function is `ret`. Nested `{}` initialisers are built with `insertvalue`.

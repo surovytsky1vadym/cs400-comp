@@ -1,4 +1,4 @@
-# CS400 Compiler — Practice 6
+# CS400 Compiler — Practice 7
 
 Hand-written lexer, recursive-descent parser, a separate semantic pass (`SemanticChecker`)
 and code generation via `llvmlite.ir`.
@@ -37,3 +37,17 @@ last `exit x` (i32 x) are never reached. The pass pushes and pops 2 frames; the 
 `gep` by the index the semantic pass found. Functions are collected first (signatures), then checked
 and generated; each becomes `fn_<name>` in the module, with parameters copied into entry-block slots.
 `exit` inside a function is `ret`. Nested `{}` initialisers are built with `insertvalue`.
+
+## Practice 7: member functions, read() and print
+Fields come first, then member functions. Approach: new nodes all the way (`MemberFnNode`,
+`MemberCallNode`). Inside a member function a name is looked up among parameters and locals, then
+the fields of the struct (`VarNode.member_index`); `f(...)` looks among the sibling member functions
+first, then the global ones. In the IR `Point_shift` takes `%Point* this` first; a field is a `gep` on
+`this`; a call passes the object's `alloca` (or a `gep` into it), and a call result gets a temporary `alloca`.
+Mutation rule: a member function is mutating if it assigns a field of its object or calls a mutating member
+function on its object or its fields; decided by a fixpoint after all bodies are checked, then every
+mutating call must go through `mut` links only (a call result is a temporary: anything goes).
+`read()` calls `scanf("%d")` into an entry-block `alloca`; `print` shares `printf` with `exit` and prints
+structs by walking their field table (`Circle{center: Point{x: 3, y: 4}, radius: 2}`).
+Additional task: `.` after a call (`p.moved(1).shift(2)`, `origin().moved(7).x`) — fields of a result are `extractvalue`.
+A test that reads input keeps it in `NAME.in`; `check.py` passes it as stdin.

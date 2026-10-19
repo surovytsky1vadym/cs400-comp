@@ -1,5 +1,5 @@
 """
-compiler.py  —  Practice 6
+compiler.py  —  Practice 7
 Languages and Compilers Design · CS400
 
 Usage:
@@ -45,6 +45,7 @@ KEYWORDS = {
 }
 
 BUILTIN_TYPES = ("i32", "i64", "bool")
+RESERVED = ("read", "print")                     # built-ins: never a user name
 INT_TYPES = ("i32", "i64")
 I32_MAX = 2**31 - 1
 I64_MAX = 2**63 - 1
@@ -106,6 +107,7 @@ def lex(data: bytes):
             elif b == ord(":"): state, start_col = "COLON", col
             elif b == ord("="): state, start_col = "EQ", col
             elif b == ord("!"): state, start_col = "BANG", col
+            elif b == ord('"'): state, start, start_col = "STRING", i, col
             else:
                 ch = chr(b) if b < 128 else f"\\x{b:02x}"
                 raise CompileError(f"line {line}:{col}: unexpected byte '{ch}'")
@@ -129,6 +131,13 @@ def lex(data: bytes):
                 tokens.append(Token("number", word.decode(), line, start_col))
                 state = "START"
                 continue
+        elif state == "STRING":                     # no escapes: any byte but '"' and newline
+            if b is None or b == 10:
+                raise CompileError(f"line {line}:{start_col}: string literal is not closed on its line")
+            if b == ord('"'):
+                text = data[start:i + 1].decode("latin-1")    # one char per byte, quotes included
+                tokens.append(Token("string", text, line, start_col))
+                state = "START"
         elif state == "MINUS":
             if b == ord(">"):
                 tokens.append(Token("arrow", "->", line, start_col))
@@ -188,12 +197,13 @@ class ProgramNode(Node):
 
 class StructNode(Node):
     kind = "struct"
-    def __init__(self, line, col, name, fields):
-        self.line, self.col, self.name, self.fields = line, col, name, fields
+    def __init__(self, line, col, name, fields, methods):
+        self.line, self.col, self.name, self.fields, self.methods = line, col, name, fields, methods
         self.index = {}               # field name -> position, set by SemanticChecker
+        self.method_table = {}        # member function name -> MemberFnNode, set by SemanticChecker
     def dump(self, indent=0):
         print(" " * indent + f"Struct {self.name}")
-        for f in self.fields:
+        for f in self.fields + self.methods:
             f.dump(indent + 2)
 
 class FieldDeclNode(Node):
@@ -202,7 +212,7 @@ class FieldDeclNode(Node):
         self.line, self.col, self.type_name, self.type_pos = line, col, type_name, type_pos
         self.name, self.mutable = name, mutable
     def dump(self, indent=0):
-        print(" " * indent + f"Field {self.name} {self.type_name} {'mut' if self.mutable else 'const'}")
+        print(" " * indent + f"Member {self.name} {self.type_name} {'mut' if self.mutable else 'const'}")
 
 class FnNode(Node):
     kind = "fn"
@@ -210,11 +220,23 @@ class FnNode(Node):
         self.line, self.col, self.name = line, col, name
         self.params, self.ret_type, self.ret_pos, self.body = params, ret_type, ret_pos, body
         self.ir_fn = None             # set by CodeGen
+    label = "Fn"
     def dump(self, indent=0):
-        print(" " * indent + f"Fn {self.name} -> {self.ret_type}")
+        print(" " * indent + f"{self.label} {self.name} -> {self.ret_type}")
         for p in self.params:
             print(" " * (indent + 2) + f"Param {p.name} {p.type_name}")
         self.body.dump(indent + 2)
+
+class MemberFnNode(FnNode):
+    """A function declared inside a struct; in the IR it is <Struct>_<name> with `this` first."""
+    kind = "member_fn"
+    label = "MemberFn"
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.owner = None             # the StructNode, set by SemanticChecker
+        self.assigns_field = False    # assigns a field of its own object
+        self.self_calls = []          # member functions it calls on its own object or its fields
+        self.mutating = False         # decided after all bodies are checked
 
 class DeclNode(Node):
     kind = "decl"
@@ -273,6 +295,7 @@ class VarNode(Node):
         self.line, self.col, self.name = line, col, name
         self.type = None
         self.decl = None
+        self.member_index = None      # inside a member function: a field of `this`
     def path(self):
         return self.name
     def dump(self, indent=0):
@@ -280,8 +303,9 @@ class VarNode(Node):
 
 class FieldNode(Node):
     kind = "field"
-    def __init__(self, line, col, obj, name):
+    def __init__(self, line, col, obj, name, dot=None):
         self.line, self.col, self.obj, self.name = line, col, obj, name   # line:col of the field name
+        self.dot = dot or (line, col) # line:col of the '.' before the name
         self.type = None
         self.index = None             # position of the field in its struct, set by SemanticChecker
         self.field = None             # the FieldDeclNode
@@ -297,10 +321,54 @@ class CallNode(Node):
         self.line, self.col, self.name, self.args = line, col, name, args
         self.type = None
         self.fn = None                # the FnNode, set by SemanticChecker
+        self.on_this = False          # f(...) inside a member function that names a sibling
+    def path(self):
+        return f"{self.name}(...)"
     def dump(self, indent=0):
         print(" " * indent + f"Call {self.name}")
         for a in self.args:
             a.dump(indent + 2)
+
+class MemberCallNode(Node):
+    kind = "member_call"
+    def __init__(self, line, col, obj, name, args, dot):
+        self.line, self.col, self.obj, self.name, self.args = line, col, obj, name, args
+        self.dot = dot                # line:col of the '.' before the name
+        self.type = None
+        self.fn = None                # the MemberFnNode, set by SemanticChecker
+    def path(self):
+        return f"{self.obj.path()}.{self.name}(...)"
+    def dump(self, indent=0):
+        print(" " * indent + f"MemberCall {self.name}")
+        self.obj.dump(indent + 2)
+        for a in self.args:
+            a.dump(indent + 2)
+
+class ReadNode(Node):
+    kind = "read"
+    def __init__(self, line, col):
+        self.line, self.col = line, col
+        self.type = "i32"
+    def path(self):
+        return "read()"
+    def dump(self, indent=0):
+        print(" " * indent + "Read")
+
+class PrintNode(Node):
+    kind = "print"
+    def __init__(self, line, col, arg):
+        self.line, self.col, self.arg = line, col, arg   # arg: expression or StringNode
+    def dump(self, indent=0):
+        print(" " * indent + "Print")
+        self.arg.dump(indent + 2)
+
+class StringNode(Node):
+    kind = "string"
+    def __init__(self, line, col, value):
+        self.line, self.col, self.value = line, col, value   # value: the bytes between the quotes
+        self.type = "string"
+    def dump(self, indent=0):
+        print(" " * indent + f"String \"{self.value.decode('latin-1')}\"")
 
 class ConstNode(Node):
     kind = "const"
@@ -410,6 +478,13 @@ class Parser:
             raise CompileError(f"line {tok.line}:{tok.col}: {msg}")
         raise CompileError(f"line {self.last_line}:{self.last_col}: {msg}")
 
+    @staticmethod
+    def name_ok(tok, what):
+        if tok.text in RESERVED:
+            raise CompileError(f"line {tok.line}:{tok.col}: '{tok.text}' is a built-in and cannot be "
+                               f"the name of a {what}")
+        return tok
+
     def end_of_line(self):
         if self.peek() is not None:
             self.raise_err(f"unexpected '{self.peek().text}' after the statement")
@@ -443,40 +518,49 @@ class Parser:
             self.raise_err("unexpected statement after exit")
         return ProgramNode(structs, fns, stmts, exit_node)
 
-    # struct ::= "struct" ident NL "{" NL field_decl { field_decl } "}" NL
+    # struct ::= "struct" ident NL "{" NL field_decl { field_decl } { fn } "}" NL
     def parse_struct(self):
         self.next_line()
         kw = self.eat()
-        name = self.expect("ident", "a struct name")
+        name = self.name_ok(self.expect("ident", "a struct name"), "struct")
         self.end_of_line()
         lbrace = self.open_brace(kw)
-        fields = []
+        fields, methods = [], []
         while True:
             toks = self.peek_line()
             if toks is None:
                 raise CompileError(f"line {lbrace.line}:{lbrace.col}: '{{' is never closed")
+            if toks[0].text == "fn":
+                if not fields:
+                    self.next_line()
+                    self.raise_err(f"a member function of '{name.text}' must come after its fields")
+                methods.append(self.parse_fn(MemberFnNode))
+                continue
             self.next_line()
             if toks[0].kind == "rbrace":
                 self.eat()
                 self.end_of_line()
                 break
+            if methods:
+                self.raise_err(f"a field of '{name.text}' cannot follow a member function")
             type_tok = self.parse_type()
             mutable = self.peek() is not None and self.peek().text == "mut"
             if mutable:
                 self.eat()
-            fname = self.expect("ident", "a field name")
+            fname = self.name_ok(self.expect("ident", "a field name"), "field")
             self.end_of_line()
             fields.append(FieldDeclNode(fname.line, fname.col, type_tok.text,
                                         (type_tok.line, type_tok.col), fname.text, mutable))
         if not fields:
             raise CompileError(f"line {lbrace.line}:{lbrace.col}: struct '{name.text}' has no fields")
-        return StructNode(name.line, name.col, name.text, fields)
+        return StructNode(name.line, name.col, name.text, fields, methods)
 
     # fn ::= "fn" ident ":=" "(" [ type ident { "," type ident } ] ")" "->" type NL block
-    def parse_fn(self):
+    def parse_fn(self, cls=FnNode):
         self.next_line()
         kw = self.eat()
-        name = self.expect("ident", "a function name")
+        what = "member function" if cls is MemberFnNode else "function"
+        name = self.name_ok(self.expect("ident", f"a {what} name"), what)
         tok = self.peek()
         if tok is None or tok.text != ":=":
             self.raise_err(f"expected ':=' after the function name" + (f", got '{tok.text}'" if tok else ""))
@@ -486,7 +570,7 @@ class Parser:
         if self.peek() is not None and self.peek().kind != "rparen":
             while True:
                 type_tok = self.parse_type()
-                pname = self.expect("ident", "a parameter name")
+                pname = self.name_ok(self.expect("ident", "a parameter name"), "parameter")
                 params.append(DeclNode(pname.line, pname.col, type_tok.text, (type_tok.line, type_tok.col),
                                        pname.text, False, None))
                 if self.peek() is not None and self.peek().kind == "comma":
@@ -500,7 +584,7 @@ class Parser:
         body = self.parse_block(kw)
         if body.exit_node is None:
             raise CompileError(f"line {name.line}:{name.col}: the body of '{name.text}' must end with exit")
-        return FnNode(name.line, name.col, name.text, params, ret.text, (ret.line, ret.col), body)
+        return cls(name.line, name.col, name.text, params, ret.text, (ret.line, ret.col), body)
 
     def parse_type(self):
         tok = self.peek()
@@ -516,7 +600,7 @@ class Parser:
             self.raise_err(f"unexpected '{self.peek().text}' after exit")
         return ExitNode(tok.line, tok.col, val)
 
-    # statement ::= decl | assign | if | while      (consumes one line, or several for if/while)
+    # statement ::= decl | assign | if | while | print   (consumes one line, or several for if/while)
     def parse_statement_line(self):
         self.next_line()
         tok = self.peek()
@@ -530,6 +614,8 @@ class Parser:
             self.raise_err(f"'{tok.text}' is allowed only at the top level, before the statements")
         if tok.kind in ("lbrace", "rbrace"):
             self.raise_err(f"unexpected '{tok.text}'")
+        if tok.kind == "string":
+            self.raise_err("a string literal can only be the argument of print")
         node = self.parse_statement()
         self.end_of_line()
         return node
@@ -539,10 +625,10 @@ class Parser:
         nxt = self.peek(1)
         if tok.subkind == "typename":
             return self.parse_decl()
+        if tok.text == "print":
+            return self.parse_print()
         if tok.kind == "ident" and nxt is not None and (nxt.kind == "ident" or nxt.text == "mut"):
             return self.parse_decl()                    # a struct-typed declaration: Point p{...}
-        if tok.kind == "ident" and nxt is not None and nxt.kind == "lparen":
-            self.raise_err("a call alone is not a statement")
         if tok.kind == "ident":
             return self.parse_assign()
         self.raise_err(f"cannot start a statement with '{tok.text}'")
@@ -559,7 +645,7 @@ class Parser:
         tok = self.peek()
         if tok is None or tok.kind != "ident":
             self.raise_err("expected a variable name")
-        name_tok = self.eat()
+        name_tok = self.name_ok(self.eat(), "variable")
 
         tok = self.peek()
         if tok is None or tok.kind != "lbrace":
@@ -595,8 +681,16 @@ class Parser:
 
     # assign ::= ident { "." ident } ":=" expr
     def parse_assign(self):
-        target = self.parse_chain(self.eat())
+        name_tok = self.peek()
+        target = self.parse_name()
         tok = self.peek()
+        through_call = any(isinstance(n, (CallNode, MemberCallNode, ReadNode)) for n in self.links(target))
+        if through_call:
+            if tok is not None and tok.text == ":=":
+                raise CompileError(f"line {tok.line}:{tok.col}: cannot assign to '{target.path()}': "
+                                   f"a call result is a temporary")
+            if isinstance(target, (CallNode, MemberCallNode, ReadNode)):
+                raise CompileError(f"line {name_tok.line}:{name_tok.col}: a call alone is not a statement")
         if tok is None or tok.text != ":=":
             if tok is not None:
                 raise CompileError(f"line {tok.line}:{tok.col}: expected ':=' after '{target.path()}', got '{tok.text}'")
@@ -607,18 +701,40 @@ class Parser:
         return AssignNode(root.line, root.col, target, expr)
 
     @staticmethod
-    def root(node):
-        while isinstance(node, FieldNode):
+    def links(node):
+        """The chain from its last link back to its root: c.center.d2() -> d2(), center, c."""
+        out = [node]
+        while isinstance(node, (FieldNode, MemberCallNode)):
             node = node.obj
-        return node
+            out.append(node)
+        return out
 
-    # field ::= ident "." ident { "." ident }
-    def parse_chain(self, name_tok):
-        node = VarNode(name_tok.line, name_tok.col, name_tok.text)
+    @staticmethod
+    def root(node):
+        return Parser.links(node)[-1]
+
+    # the start of a chain: a variable, a call f(...) or read()
+    def parse_name(self):
+        tok = self.eat()
+        if self.peek() is not None and self.peek().kind == "lparen":
+            return self.parse_chain(self.parse_call(tok))
+        if tok.text in RESERVED:
+            raise CompileError(f"line {tok.line}:{tok.col}: '{tok.text}' is a built-in, not a variable")
+        return self.parse_chain(VarNode(tok.line, tok.col, tok.text))
+
+    # field       ::= ident "." ident { "." ident }
+    # member_call ::= ident { "." ident } "." ident "(" [ expr { "," expr } ] ")"
+    # A '.' may also follow a call: p.moved(1).x, origin().moved(7) (the additional task).
+    def parse_chain(self, node):
         while self.peek() is not None and self.peek().kind == "dot":
-            self.eat()
-            f = self.expect("ident", "a field name after '.'")
-            node = FieldNode(f.line, f.col, node, f.text)
+            dot = self.eat()
+            f = self.expect("ident", "a field or member function name after '.'")
+            if self.peek() is not None and self.peek().kind == "lparen":
+                self.name_ok(f, "member function")
+                args = self.parse_args()
+                node = MemberCallNode(f.line, f.col, node, f.text, args, (dot.line, dot.col))
+            else:
+                node = FieldNode(f.line, f.col, node, f.text, (dot.line, dot.col))
         return node
 
     # expr ::= arith [ ("==" | "!=") arith ]
@@ -648,7 +764,7 @@ class Parser:
             node = BinOpNode(tok.line, tok.col, tok.text, node, self.parse_factor())
         return node
 
-    # factor ::= number | "true" | "false" | ident | field | call | "!" factor
+    # factor ::= number | "true" | "false" | ident | field | call | member_call | "!" factor
     def parse_factor(self):
         tok = self.peek()
         if tok is None:
@@ -662,17 +778,27 @@ class Parser:
         elif tok.subkind == "literal":
             self.eat()
             return BoolNode(tok.line, tok.col, tok.text == "true")
+        elif tok.kind == "string":
+            self.raise_err("a string literal can only be the argument of print")
+        elif tok.text == "print":
+            self.raise_err("print is a statement and has no value")
         elif tok.kind == "ident":
-            self.eat()
-            if self.peek() is not None and self.peek().kind == "lparen":
-                return self.parse_call(tok)
-            return self.parse_chain(tok)
+            return self.parse_name()
         else:
             self.raise_err(f"expected a constant or a variable, got '{tok.text}'")
 
-    # call ::= ident "(" [ expr { "," expr } ] ")"
+    # call ::= ident "(" [ expr { "," expr } ] ")"        read ::= "read" "(" ")"
     def parse_call(self, name_tok):
-        self.eat()
+        if name_tok.text == "read":
+            self.eat()
+            if self.peek() is not None and self.peek().kind != "rparen":
+                self.raise_err("read() takes no arguments")
+            self.expect("rparen", "')' to close the call")
+            return ReadNode(name_tok.line, name_tok.col)
+        return CallNode(name_tok.line, name_tok.col, name_tok.text, self.parse_args())
+
+    def parse_args(self):
+        self.eat()                                      # '('
         args = []
         if self.peek() is not None and self.peek().kind != "rparen":
             while True:
@@ -682,7 +808,25 @@ class Parser:
                     continue
                 break
         self.expect("rparen", "')' to close the call")
-        return CallNode(name_tok.line, name_tok.col, name_tok.text, args)
+        return args
+
+    # print ::= "print" "(" ( string | expr ) ")"
+    def parse_print(self):
+        kw = self.eat()
+        self.expect("lparen", "'(' after print")
+        tok = self.peek()
+        if tok is None or tok.kind == "rparen":
+            raise CompileError(f"line {kw.line}:{kw.col}: print takes one argument, got none")
+        if tok.kind == "string":
+            self.eat()
+            arg = StringNode(tok.line, tok.col, tok.text[1:-1].encode("latin-1"))
+        else:
+            arg = self.parse_expr()
+        tok = self.peek()
+        if tok is not None and tok.kind == "comma":
+            self.raise_err("print takes one argument, got more")
+        self.expect("rparen", "')' to close print")
+        return PrintNode(kw.line, kw.col, arg)
 
     # if ::= "if" expr NL block [ "else" NL block ]
     def parse_if(self):
@@ -756,23 +900,60 @@ class SemanticChecker:
         self.fns = {}                 # name -> FnNode
         self.scopes = [{}]            # stack of frames: name -> DeclNode
         self.current_fn = None
+        self.current_struct = None    # the StructNode whose member function is being checked
+        self.member_calls = []        # every MemberCallNode, for the mutation rule at the end
 
     def visit_program(self, node):
         for s in node.structs:
             s.accept(self)
+        methods = [m for s in node.structs for m in s.methods]
         for f in node.fns:                              # all signatures first: calls may go forward
             if f.name in self.fns:
                 raise CompileError(f"line {f.line}:{f.col}: function '{f.name}' is already declared")
+            self.fns[f.name] = f
+        for f in methods + node.fns:
             for p in f.params:
                 self.check_type(p.type_name, p.type_pos)
             self.check_type(f.ret_type, f.ret_pos)
-            self.fns[f.name] = f
+        for m in methods:
+            self.current_struct = m.owner
+            m.accept(self)
+        self.current_struct = None
         for f in node.fns:
             f.accept(self)
         self.scopes = [{}]
         for stmt in node.stmts:
             stmt.accept(self)
         node.exit_node.accept(self)
+        self.check_mutation(methods)
+
+    def check_mutation(self, methods):
+        """A member function is mutating if it assigns a field of its object or calls a mutating
+        member function on its object or a field of it. Calls may form cycles: repeat until stable."""
+        for m in methods:
+            m.mutating = m.assigns_field
+        changed = True
+        while changed:
+            changed = False
+            for m in methods:
+                if not m.mutating and any(callee.mutating for callee in m.self_calls):
+                    m.mutating = changed = True
+        for call in self.member_calls:                  # a mutating call needs every link mut
+            if not call.fn.mutating:
+                continue
+            for link in Parser.links(call.obj):
+                if isinstance(link, FieldNode):
+                    if not link.field.mutable:
+                        raise CompileError(f"line {link.line}:{link.col}: cannot call '{call.name}' on "
+                                           f"'{call.obj.path()}': it changes the object, and field "
+                                           f"'{link.name}' is not mut")
+                elif isinstance(link, VarNode):
+                    if not link.decl.mutable:
+                        raise CompileError(f"line {link.line}:{link.col}: cannot call '{call.name}' on "
+                                           f"'{call.obj.path()}': it changes the object, and "
+                                           f"'{link.name}' is not mut")
+                else:
+                    break                               # a call result: a temporary copy, anything goes
 
     def visit_struct(self, node):
         if node.name in self.structs:
@@ -784,6 +965,14 @@ class SemanticChecker:
                 raise CompileError(f"line {f.type_pos[0]}:{f.type_pos[1]}: struct '{node.name}' cannot contain itself")
             self.check_type(f.type_name, f.type_pos)
             node.index[f.name] = i
+        for m in node.methods:
+            if m.name in node.index:
+                raise CompileError(f"line {m.line}:{m.col}: '{m.name}' is already a field of '{node.name}'")
+            if m.name in node.method_table:
+                raise CompileError(f"line {m.line}:{m.col}: member function '{m.name}' is already "
+                                   f"declared in '{node.name}'")
+            m.owner = node
+            node.method_table[m.name] = m
         self.structs[node.name] = node
 
     def visit_fn(self, node):
@@ -796,6 +985,8 @@ class SemanticChecker:
         self.scopes = [frame]                           # the body does not see top-level variables
         node.body.accept(self)
         self.current_fn = None
+
+    visit_member_fn = visit_fn
 
     def check_type(self, name, pos):
         if name not in BUILTIN_TYPES and name not in self.structs:
@@ -842,9 +1033,12 @@ class SemanticChecker:
         target = node.target
         target.accept(self)
         root = Parser.root(target)
+        if root.member_index is not None:              # a field of `this`: the function mutates
+            self.current_fn.assigns_field = True
         if isinstance(target, VarNode):
             if not target.decl.mutable:
-                raise CompileError(f"line {node.line}:{node.col}: cannot assign to '{target.name}': it is not mut")
+                what = f"field '{target.name}'" if target.member_index is not None else "it"
+                raise CompileError(f"line {node.line}:{node.col}: cannot assign to '{target.name}': {what} is not mut")
         else:
             if not root.decl.mutable:
                 raise CompileError(f"line {node.line}:{node.col}: cannot assign to '{target.path()}': "
@@ -938,13 +1132,16 @@ class SemanticChecker:
 
     def visit_var(self, node):
         node.decl = self.lookup(node, node.name)
+        if isinstance(node.decl, FieldDeclNode):       # a field of the object of a member function
+            node.member_index = self.current_struct.index[node.name]
         node.type = node.decl.type_name
         return node.type
 
     def visit_field(self, node):
         t = node.obj.accept(self)
         if t not in self.structs:
-            raise CompileError(f"line {node.line}:{node.col}: '{node.obj.path()}' of type {t} has no fields")
+            line, col = node.dot if isinstance(node.obj, (CallNode, MemberCallNode, ReadNode)) else (node.line, node.col)
+            raise CompileError(f"line {line}:{col}: '{node.obj.path()}' of type {t} has no fields")
         struct = self.structs[t]
         if node.name not in struct.index:
             raise CompileError(f"line {node.line}:{node.col}: struct '{t}' has no field '{node.name}'")
@@ -954,17 +1151,49 @@ class SemanticChecker:
         return node.type
 
     def visit_call(self, node):
-        if node.name not in self.fns:
+        struct = self.current_struct
+        if struct is not None and node.name in struct.method_table:   # a sibling hides a global
+            node.fn, node.on_this = struct.method_table[node.name], True
+            self.current_fn.self_calls.append(node.fn)
+        elif node.name in self.fns:
+            node.fn = self.fns[node.name]
+        else:
             raise CompileError(f"line {node.line}:{node.col}: function '{node.name}' is not declared")
-        fn = node.fn = self.fns[node.name]
+        self.check_args(node, node.fn)
+        node.type = node.fn.ret_type
+        return node.type
+
+    def check_args(self, node, fn):
         if len(node.args) != len(fn.params):
             raise CompileError(f"line {node.line}:{node.col}: function '{fn.name}' takes {len(fn.params)} "
                                f"arguments, got {len(node.args)}")
         for arg, p in zip(node.args, fn.params):
             arg.accept(self)
             self.check_assignable(arg, p.type_name, arg, f"pass '{p.name}' to '{fn.name}'")
-        node.type = fn.ret_type
+
+    def visit_member_call(self, node):
+        t = node.obj.accept(self)
+        if t not in self.structs:
+            raise CompileError(f"line {node.dot[0]}:{node.dot[1]}: cannot call '{node.name}' on "
+                               f"'{node.obj.path()}' of type {t}: it is not a struct")
+        struct = self.structs[t]
+        if node.name not in struct.method_table:
+            raise CompileError(f"line {node.line}:{node.col}: struct '{t}' has no member function '{node.name}'")
+        node.fn = struct.method_table[node.name]
+        self.check_args(node, node.fn)
+        root = Parser.root(node.obj)
+        if isinstance(root, VarNode) and root.member_index is not None:   # on a field of `this`
+            self.current_fn.self_calls.append(node.fn)
+        self.member_calls.append(node)
+        node.type = node.fn.ret_type
         return node.type
+
+    def visit_read(self, node):
+        return node.type
+
+    def visit_print(self, node):
+        if not isinstance(node.arg, StringNode):
+            node.arg.accept(self)
 
     def visit_const(self, node):
         if node.value <= I32_MAX:
@@ -982,6 +1211,14 @@ class SemanticChecker:
         for frame in reversed(self.scopes):
             if name in frame:
                 return frame[name]
+        struct = self.current_struct
+        if struct is not None and name in struct.index:  # then the fields of the object
+            return struct.fields[struct.index[name]]
+        if name in self.structs:
+            raise CompileError(f"line {node.line}:{node.col}: '{name}' is a type, not an object")
+        if struct is not None:
+            raise CompileError(f"line {node.line}:{node.col}: '{name}' is not a parameter, a local "
+                               f"variable or a field of '{struct.name}'")
         raise CompileError(f"line {node.line}:{node.col}: variable '{name}' is used before its declaration")
 
     def check_assignable(self, expr, want, at, what):
@@ -1007,6 +1244,7 @@ class CodeGen:
         self.module = ir.Module(name="program")
         self.module.triple = llvm.get_default_triple()
         self.types = {"i32": I32, "i64": I64, "bool": I1}
+        self.structs = {}             # name -> StructNode, for printing by the field table
 
         printf_ty = ir.FunctionType(I32, [ir.PointerType(I8)], var_arg=True)
         self.printf_fn = ir.Function(self.module, printf_ty, name="printf")
@@ -1015,6 +1253,9 @@ class CodeGen:
         self.fmt_bool = self.global_string(".fmt_bool", b"Program exit with result %s\n\0")
         self.str_true  = self.global_string(".str_true",  b"true\0")
         self.str_false = self.global_string(".str_false", b"false\0")
+        self.texts = {}               # bytes -> global constant, for print formats and literals
+        self.scanf_fn = None          # declared on the first read()
+        self.this = None              # inside a member function: the pointer to its object
 
     def global_string(self, name, data):
         const = ir.Constant(ir.ArrayType(I8, len(data)), bytearray(data))
@@ -1027,6 +1268,15 @@ class CodeGen:
     def cstr(self, g):
         zero = ir.Constant(I64, 0)
         return self.builder.gep(g, [zero, zero], inbounds=True)
+
+    def text(self, data):
+        """An i8* to a global constant holding data and a trailing zero; one global per text."""
+        if data not in self.texts:
+            self.texts[data] = self.global_string(f".str.{len(self.texts)}", data + b"\0")
+        return self.cstr(self.texts[data])
+
+    def printf(self, fmt, *args):
+        self.builder.call(self.printf_fn, [self.text(fmt), *args])
 
     def coerce(self, value, have, want):
         if have == "i32" and want == "i64":
@@ -1041,28 +1291,43 @@ class CodeGen:
     def visit_program(self, node):
         for s in node.structs:
             s.accept(self)
-        for f in node.fns:                              # declare every function before any body
-            fn_ty = ir.FunctionType(self.types[f.ret_type], [self.types[p.type_name] for p in f.params])
-            f.ir_fn = ir.Function(self.module, fn_ty, name=FN_PREFIX + f.name)
-        for f in node.fns:
+        methods = [m for s in node.structs for m in s.methods]
+        for f in methods + node.fns:                    # declare every function before any body
+            params = [self.types[p.type_name] for p in f.params]
+            if isinstance(f, MemberFnNode):             # Point_shift(Point* this, ...)
+                params.insert(0, self.types[f.owner.name].as_pointer())
+                name = f"{f.owner.name}_{f.name}"
+            else:
+                name = FN_PREFIX + f.name
+            f.ir_fn = ir.Function(self.module, ir.FunctionType(self.types[f.ret_type], params), name=name)
+        for f in methods + node.fns:
             f.accept(self)
+        self.this = None
         self.start_function(ir.Function(self.module, ir.FunctionType(I32, []), name="main"))
         for stmt in node.stmts:
             stmt.accept(self)
         node.exit_node.accept(self)
 
     def visit_struct(self, node):
+        self.structs[node.name] = node
         ty = self.module.context.get_identified_type(node.name)
         ty.set_body(*[self.types[f.type_name] for f in node.fields])
         self.types[node.name] = ty
 
     def visit_fn(self, node):
         self.start_function(node.ir_fn)
-        for p, arg in zip(node.params, node.ir_fn.args):  # parameters are copied into slots
+        args = list(node.ir_fn.args)
+        self.this = None
+        if isinstance(node, MemberFnNode):              # the object is passed by address
+            self.this = args.pop(0)
+            self.this.name = "this"
+        for p, arg in zip(node.params, args):           # parameters are copied into slots
             arg.name = p.name
             p.slot = self.alloca(self.types[p.type_name], p.name)
             self.builder.store(arg, p.slot)
         node.body.accept(self)
+
+    visit_member_fn = visit_fn
 
     def visit_decl(self, node):
         if isinstance(node.init, InitListNode):
@@ -1090,13 +1355,31 @@ class CodeGen:
         self.builder.position_at_end(here)
         return slot
 
-    def address(self, node):
-        """Pointer to a variable or to a field reached through a chain (gep by index)."""
-        if isinstance(node, VarNode):
-            return node.decl.slot
+    def field_ptr(self, ptr, index, name):
         zero = ir.Constant(I32, 0)
-        return self.builder.gep(self.address(node.obj), [zero, ir.Constant(I32, node.index)],
-                                inbounds=True, name=node.name + ".ptr")
+        return self.builder.gep(ptr, [zero, ir.Constant(I32, index)], inbounds=True, name=name + ".ptr")
+
+    @staticmethod
+    def addressable(node):
+        """A chain of fields rooted at a variable lives in memory; one through a call result does not."""
+        links = Parser.links(node)
+        return isinstance(links[-1], VarNode) and all(isinstance(n, FieldNode) for n in links[:-1])
+
+    def address(self, node):
+        """Pointer to a variable, to a field of `this`, or to a field reached through a chain (gep)."""
+        if isinstance(node, VarNode):
+            if node.member_index is not None:
+                return self.field_ptr(self.this, node.member_index, node.name)
+            return node.decl.slot
+        return self.field_ptr(self.address(node.obj), node.index, node.name)
+
+    def pointer_to(self, node):
+        """The address of an object: its own memory, or a temporary alloca for a call result."""
+        if self.addressable(node):
+            return self.address(node)
+        tmp = self.alloca(self.types[node.type], "tmp")
+        self.builder.store(node.accept(self), tmp)
+        return tmp
 
     def visit_assign(self, node):
         val = self.coerce(node.value.accept(self), node.value.type, node.target.type)
@@ -1175,14 +1458,60 @@ class CodeGen:
             return self.builder.icmp_signed("!=", lhs, rhs, name="ne")
 
     def visit_var(self, node):
-        return self.builder.load(node.decl.slot, name=node.name)
-
-    def visit_field(self, node):
         return self.builder.load(self.address(node), name=node.name)
 
+    def visit_field(self, node):
+        if self.addressable(node):
+            return self.builder.load(self.address(node), name=node.name)
+        return self.builder.extract_value(node.obj.accept(self), node.index, name=node.name)
+
+    def call_args(self, node):
+        return [self.coerce(a.accept(self), a.type, p.type_name) for a, p in zip(node.args, node.fn.params)]
+
     def visit_call(self, node):
-        args = [self.coerce(a.accept(self), a.type, p.type_name) for a, p in zip(node.args, node.fn.params)]
-        return self.builder.call(node.fn.ir_fn, args, name="call")
+        this = [self.this] if node.on_this else []      # a sibling member function: same object
+        return self.builder.call(node.fn.ir_fn, this + self.call_args(node), name="call")
+
+    def visit_member_call(self, node):
+        this = self.pointer_to(node.obj)
+        return self.builder.call(node.fn.ir_fn, [this] + self.call_args(node), name=node.name)
+
+    def visit_read(self, node):
+        if self.scanf_fn is None:
+            scanf_ty = ir.FunctionType(I32, [ir.PointerType(I8)], var_arg=True)
+            self.scanf_fn = ir.Function(self.module, scanf_ty, name="scanf")
+        slot = self.alloca(I32, "in")
+        self.builder.store(ir.Constant(I32, 0), slot)   # 0 if the input has no number
+        self.builder.call(self.scanf_fn, [self.text(b"%d"), slot])
+        return self.builder.load(slot, name="read")
+
+    def visit_print(self, node):
+        arg = node.arg
+        if isinstance(arg, StringNode):                 # through %s, so a '%' in the text stays '%'
+            self.printf(b"%s\n", self.text(arg.value))
+        elif arg.type in self.types and isinstance(self.types[arg.type], ir.IdentifiedStructType):
+            self.print_struct(self.pointer_to(arg), arg.type, b"")
+            self.printf(b"\n")
+        else:
+            self.print_value(arg.accept(self), arg.type, b"", b"\n")
+
+    def print_value(self, val, type_name, before, after):
+        if type_name == "bool":
+            val = self.builder.select(val, self.cstr(self.str_true), self.cstr(self.str_false), name="text")
+        spec = {"i32": b"%d", "i64": b"%lld", "bool": b"%s"}[type_name]
+        self.printf(before + spec + after, val)
+
+    def print_struct(self, ptr, struct_name, before):
+        """Point{x: 3, y: 4}: walks the field table, so a new struct needs no new code."""
+        self.printf(before + struct_name.encode() + b"{")
+        for i, f in enumerate(self.structs[struct_name].fields):
+            label = (b", " if i else b"") + f.name.encode() + b": "
+            fptr = self.field_ptr(ptr, i, f.name)
+            if f.type_name in self.structs:
+                self.print_struct(fptr, f.type_name, label)
+            else:
+                self.print_value(self.builder.load(fptr, name=f.name), f.type_name, label, b"")
+        self.printf(b"}")
 
     def visit_const(self, node):
         return ir.Constant(self.types[node.type], node.value)

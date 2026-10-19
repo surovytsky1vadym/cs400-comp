@@ -1,0 +1,1 @@
+compilation error: line 8:8: member function 'get' is already declared in 'Point'

@@ -1,10 +1,10 @@
 Program
   Struct Point
-    Field x i32 mut
-    Field y i32 mut
+    Member x i32 mut
+    Member y i32 mut
   Struct Circle
-    Field center Point const
-    Field radius i32 mut
+    Member center Point const
+    Member radius i32 mut
   Fn add -> i32
     Param a i32
     Param b i32

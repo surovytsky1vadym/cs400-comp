@@ -1,33 +1,46 @@
-AI Usage Log — Practice 6
+AI Usage Log — Practice 7
 
 Tools: Claude Code (Claude Opus 5.5).
 
 Student
 - Architecture and decisions:
-  - program order: structs first, then functions, then statements; a function
-    after a statement is a compile error (tests/err/fn_after_statement);
-  - function parameters are immutable; assigning to one is a compile error
-    (tests/err/fn_param_not_mut);
-  - structs are passed and returned by value: parameters are copied into
-    entry-block slots, struct values are built with insertvalue.
-- Verification: checked the .expected outputs of the Practice 6 tests by hand
-  (exit codes of the valid programs, error messages and line:column positions
-  of the error programs) before accepting them.
-- Review and acceptance: ran the full suite (tests/ok, tests/err), checked the
-  generated IR and AST dumps, committed the result.
+  - "new nodes all the way": MemberFn and MemberCall stay in the tree, the
+    semantic pass and the code generator each get a method for them;
+  - the object is passed by address: Point_shift(%Point* this, ...), a field
+    inside the body is a gep on this; a call result is stored into a temporary
+    alloca, a field of a call result is extractvalue;
+  - mutation rule decided after all bodies are checked (fixpoint over cycles);
+    a call result is a temporary, so any member function may be called on it;
+  - read and print are reserved names; print is a statement, read() a factor;
+  - struct fields are dumped as "Member" in --ast, as on the task sheet.
+- Verification: checked the .expected outputs
+- Review and acceptance: ran the full suite (tests/ok, tests/err) and the
+  Practice 2-6 programs, checked the generated IR (Point_shift: pointer first
+  parameter, gep/load/add/store) and AST dumps, committed the result.
 
 AI
-- grammar.ebnf, Lexer: struct, fn, ",", "(", ")", ".", "->".
-- Parser: struct and fn definitions (top level only, before statements), field
-  chains (a.b.c), calls with argument lists, nested {} initialisers.
+- grammar.ebnf, Lexer: string literals ("..." on one line, no escapes, an
+  unclosed literal is an error at its opening quote).
+- Parser: member functions after the fields (a field after a member function and
+  a member function before the first field are errors), member calls at the end
+  of a field chain (c.center.d2()), "." after a call (additional task), read(),
+  print(string | expr), reserved names read/print, no assignment to a call result.
 - SemanticChecker:
-  - struct table: unknown fields, wrong initialiser count, {} used for builtin types;
-  - function table: argument count, argument/parameter types, exit type,
-    parameters immutable, no top-level variables inside functions;
-  - mutability along field chains (const object / const link).
-- CodeGen: named LLVM struct types, gep for field reads/writes, functions with
-  parameters stored to entry-block slots, ret, call, insertvalue for struct values.
-- Tests: 11 error tests in tests/err (fn_*, struct_*), 8 valid tests in tests/ok
-  (recursive fib, nested calls, i64 params, struct params/results, field writes,
-  nested chains and initialisers) with .expected and .ast files.
+  - struct table: field / member function name clashes, duplicate member functions;
+  - names inside a member function: params and locals, then fields; f(...) looks
+    at the member functions of the same struct first, then global functions;
+  - member calls: unknown member function, call on i32, call on a type, argument
+    count and types;
+  - mutation rule: mutating member functions (fixpoint), mutating calls only
+    through mut links, const field assignment inside a member function.
+- CodeGen: Struct_fn functions with this as the first parameter, gep on this for
+  fields, object address (alloca / gep / temporary alloca) passed to calls,
+  extractvalue for fields of call results, scanf for read(), one printf shared
+  by exit and print ("%d\n", "%lld\n", "%s\n" with select true/false, structs
+  printed by walking the field table).
+- check.py: NAME.in passed as the standard input.
+- Tests: 30 error tests in tests/err (member_*, chain_*, string_*, print_*,
+  read_*), 9 valid tests in tests/ok (Task 1/3/additional programs, two-argument
+  call, member calling member, field shadowing, mutation through a field, every
+  print kind, read() in calls) with .expected, .in and .ast files.
 - README update.

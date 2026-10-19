@@ -3,7 +3,8 @@
 check.py — test runner.
 
 tests/ok/NAME.txt   must compile; `lli` output must equal NAME.expected;
-                    if NAME.ast exists, `--ast` output must equal it too.
+                    if NAME.ast exists, `--ast` output must equal it too;
+                    if NAME.in exists, it is passed to the program as the standard input.
 tests/err/NAME.txt  must be rejected: non-zero exit, stderr equal to NAME.expected,
                     and no output file written.
 
@@ -27,8 +28,9 @@ def read(path):
         return f.read().strip()
 
 
-def run(cmd):
-    p = subprocess.run(cmd, capture_output=True, text=True)
+def run(cmd, stdin_path=None):
+    stdin = open(stdin_path) if stdin_path else subprocess.DEVNULL
+    p = subprocess.run(cmd, capture_output=True, text=True, stdin=stdin)
     return p.returncode, p.stdout.strip(), p.stderr.strip()
 
 
@@ -41,7 +43,8 @@ def check_ok(src, base, tmp):
         _, ast, _ = run([PY, COMPILER, "--ast", src])
         if ast != read(base + ".ast"):
             return False, "--ast output differs from .ast"
-    _, actual, err = run([LLI, out])
+    stdin = base + ".in" if os.path.exists(base + ".in") else None
+    _, actual, err = run([LLI, out], stdin)
     expected = read(base + ".expected")
     if actual != expected:
         return False, f"expected {expected!r}, got {(actual or err)!r}"

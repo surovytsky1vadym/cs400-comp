@@ -1,0 +1,9 @@
+fn add := (i32 a, i32 b) -> i32
+{
+    i32 s{a + b}
+    exit s
+}
+i32 a{read()}
+i32 s{add(read(), 2)}
+print(a * s)
+exit read()

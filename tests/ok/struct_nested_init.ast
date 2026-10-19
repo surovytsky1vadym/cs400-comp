@@ -1,13 +1,13 @@
 Program
   Struct Point
-    Field x i32 mut
-    Field y i32 mut
+    Member x i32 mut
+    Member y i32 mut
   Struct Circle
-    Field center Point const
-    Field radius i64 mut
+    Member center Point const
+    Member radius i64 mut
   Struct Ring
-    Field outer Circle const
-    Field inner Circle const
+    Member outer Circle const
+    Member inner Circle const
   Decl r i32 const
     Const 5
   Decl g Ring const

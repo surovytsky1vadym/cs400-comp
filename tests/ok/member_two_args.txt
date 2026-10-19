@@ -1,0 +1,17 @@
+struct Rect
+{
+    i32 mut w
+    i32 mut h
+    fn scale := (i32 kw, i32 kh) -> i32
+    {
+        w := w * kw
+        h := h * kh
+        i32 area{w * h}
+        exit area
+    }
+}
+Rect mut r{2, 3}
+i32 area{r.scale(4, 5)}
+print(r.w)
+print(r.h)
+exit area

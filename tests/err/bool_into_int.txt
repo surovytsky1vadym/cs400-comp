@@ -1,0 +1,4 @@
+bool b{true}
+i64 mut a{1}
+a := b
+exit a

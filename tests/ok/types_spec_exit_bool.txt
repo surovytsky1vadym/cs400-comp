@@ -1,0 +1,6 @@
+i64 a{10}
+bool b{true}
+bool d{a == 10}
+bool mut e{a != 10}
+e := b == d
+exit e

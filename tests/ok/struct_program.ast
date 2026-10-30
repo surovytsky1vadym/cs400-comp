@@ -1,0 +1,74 @@
+Program
+  Struct Point
+    Member x i32 mut
+    Member y i32 mut
+  Struct Circle
+    Member center Point const
+    Member radius i32 mut
+  Fn add -> i32
+    Param a i32
+    Param b i32
+    Block
+      Decl sum i32 const
+        BinOp +
+          Var a
+          Var b
+      Exit
+        Var sum
+  Fn isXZero -> bool
+    Param p Point
+    Block
+      Decl zero bool const
+        BinOp ==
+          Field x
+            Var p
+          Const 0
+      Exit
+        Var zero
+  Fn moved -> Point
+    Param p Point
+    Param dx i32
+    Block
+      Decl q Point const
+        Init
+          BinOp +
+            Field x
+              Var p
+            Var dx
+          Field y
+            Var p
+      Exit
+        Var q
+  Decl p Point const
+    Init
+      Const 10
+      Const 20
+  Decl c Circle const
+    Init
+      Var p
+      Const 5
+  Decl xCoord i32 const
+    Field x
+      Field center
+        Var c
+  Decl z bool const
+    Call isXZero
+      Var p
+  Decl r Point mut
+    Call moved
+      Var p
+      Const 1
+  Assign r
+    Call moved
+      Var r
+      Const 2
+  Decl result i32 const
+    Call add
+      Var xCoord
+      Call add
+        Field x
+          Var r
+        Field radius
+          Var c
+  Exit
+    Var result

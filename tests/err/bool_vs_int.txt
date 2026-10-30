@@ -1,0 +1,3 @@
+i32 a{1}
+bool b{true == a}
+exit b

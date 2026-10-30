@@ -1,0 +1,10 @@
+struct Point
+{
+    i32 mut x
+    i32 mut y
+}
+Point mut p{1, 2}
+p.x := p.x + 10
+p.y := 5
+Point q{p}
+exit q.x

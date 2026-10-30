@@ -1,0 +1,12 @@
+struct Point
+{
+    i32 mut x
+    i32 y
+    fn bump := () -> i32
+    {
+        y := y + 1
+        exit y
+    }
+}
+Point mut p{1, 2}
+exit p.bump()

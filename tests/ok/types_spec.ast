@@ -1,0 +1,35 @@
+Program
+  Decl a i64 const
+    Const 10
+  Decl b bool const
+    Bool true
+  Decl c bool const
+    Bool false
+  Decl d bool const
+    BinOp ==
+      Var a
+      Const 10
+  Decl e bool mut
+    BinOp !=
+      Var a
+      Const 10
+  Assign e
+    BinOp ==
+      Var b
+      Var d
+  Decl x i32 const
+    Const 15
+  Decl y i64 mut
+    Var x
+  Decl z i64 const
+    BinOp +
+      Var x
+      Const 10
+  Assign y
+    BinOp +
+      BinOp *
+        Var y
+        Var z
+      Var a
+  Exit
+    Var y

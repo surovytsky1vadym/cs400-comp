@@ -1,0 +1,7 @@
+fn twice := (i32 v) -> i32
+{
+    exit v
+}
+i32 twice{1}
+i32 a{twice(2)}
+exit a

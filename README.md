@@ -1,4 +1,4 @@
-# CS400 Compiler — Practice 7
+# CS400 Compiler — Practice 8
 
 Hand-written lexer, recursive-descent parser, a separate semantic pass (`SemanticChecker`)
 and code generation via `llvmlite.ir`.
@@ -6,6 +6,7 @@ and code generation via `llvmlite.ir`.
 ```bash
 python3 src/compiler.py input.txt output.ll   # compile
 python3 src/compiler.py --ast input.txt       # print the tree
+python3 src/compiler.py --ast-checked input.txt   # print the tree after the semantic pass
 lli output.ll                             # run
 python3 check.py                          # run tests/ok and tests/err
 ```
@@ -51,3 +52,18 @@ mutating call must go through `mut` links only (a call result is a temporary: an
 structs by walking their field table (`Circle{center: Point{x: 3, y: 4}, radius: 2}`).
 Additional task: `.` after a call (`p.moved(1).shift(2)`, `origin().moved(7).x`) — fields of a result are `extractvalue`.
 A test that reads input keeps it in `NAME.in`; `check.py` passes it as stdin.
+
+## Practice 8: callable objects and lambdas
+Both are rewrites in the semantic pass. A call `name(args)` where `name` is a visible variable becomes
+the member call `name.call(args)`: the `CallNode` turns into a `CallableCallNode`, a `MemberCallNode` that only
+prints differently, so the argument checks, the mutation rule and code generation are the ones of member
+calls. `obj.name(args)` on a field becomes `obj.name.call(args)`. A name that is both a visible variable and a
+function is an error at the call.
+A lambda becomes struct `lambda.<name>` with one field per capture, its member function `call`, and a variable
+initialised at the declaration with the captured values, so a capture is a copy. Lambdas of the same name in
+different blocks get `lambda.<name>.1` and so on. The body is checked like a member function of that struct,
+except that it does not see sibling member functions and reports outer names as not captured. The struct's name
+cannot be written in a program, so a lambda cannot be a parameter, a result, a printed value or assigned.
+`--ast` stays the parse tree; `--ast-checked` prints the tree after the pass.
+Additional task: `[mut n]` makes the field `mut`; the closure variable is `mut` when any capture is.
+A test may also keep the `--ast-checked` output in `NAME.ast_checked`.

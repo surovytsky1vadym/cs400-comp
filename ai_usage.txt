@@ -16,7 +16,11 @@ Prompts (word for word)
    Don't push. At the end, give me the demo commands the PDF lists
 
 What I understood
-[to be written by the student]
+The semantic pass resolves name(): if name is a variable of a struct with call, it becomes name.call(), 
+so existing member-call checks and codegen are reused.
+A lambda is now a struct lambda.NAME (one field per capture) call member function with body variable 
+holding copies of the captures. Captures are copies, so any later changes to the original are not reflected in the lambda. 
+With mut x the field is mutable, call becomes mutating and the closure variable has to be mut.
 
 Taken as-is from the AI
 - src/compiler.py: the call rule and the rewrite into CallableCallNode, obj.name(args)
@@ -26,7 +30,7 @@ Taken as-is from the AI
 - Tests: tests/ok/callable_*, lambda_*; tests/err/callable_*, lambda_*.
 
 Changed by the student
-[to be written by the student]
+I ran all tests and checked the output matches the pdf. No changes to the code were made, just verification. Reviewed the conflicts claude flagged and kept its choices.
 
 
 AI Usage Log — Practice 7

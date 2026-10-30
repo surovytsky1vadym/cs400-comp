@@ -248,15 +248,15 @@ class LambdaNode(Node):
     from then on only decl generates code at this place."""
     kind = "lambda"
     def __init__(self, line, col, name, captures, params, ret_type, ret_pos, body):
-        self.line, self.col, self.name, self.captures = line, col, name, captures   # captures: ident tokens
+        self.line, self.col, self.name, self.captures = line, col, name, captures   # captures: (ident token, mut)
         self.params, self.ret_type, self.ret_pos, self.body = params, ret_type, ret_pos, body
         self.struct = None            # the StructNode lambda.<name>, set by SemanticChecker
         self.decl = None              # the DeclNode of the closure variable, set by SemanticChecker
     def dump(self, indent=0):
         print(" " * indent + f"Lambda {self.name} -> {self.ret_type}")
         if self.struct is None:                         # --ast: the parse tree
-            for c in self.captures:
-                print(" " * (indent + 2) + f"Capture {c.text}")
+            for c, mutable in self.captures:
+                print(" " * (indent + 2) + f"Capture {c.text} {'mut' if mutable else 'const'}")
             for p in self.params:
                 print(" " * (indent + 2) + f"Param {p.name} {p.type_name}")
             self.body.dump(indent + 2)
@@ -613,7 +613,7 @@ class Parser:
         params, ret, body = self.parse_signature_and_body(kw, name)
         return cls(name.line, name.col, name.text, params, ret.text, (ret.line, ret.col), body)
 
-    # lambda ::= "fn" ident ":=" "[" [ ident { "," ident } ] "]"
+    # lambda ::= "fn" ident ":=" "[" [ capture { "," capture } ] "]"     capture ::= [ "mut" ] ident
     #            "(" [ type ident { "," type ident } ] ")" "->" type NL block
     def parse_lambda(self):
         kw = self.eat()
@@ -623,7 +623,10 @@ class Parser:
         captures = []
         if self.peek() is not None and self.peek().kind != "rbracket":
             while True:
-                captures.append(self.expect("ident", "a captured variable"))
+                mutable = self.peek() is not None and self.peek().text == "mut"
+                if mutable:
+                    self.eat()
+                captures.append((self.expect("ident", "a captured variable"), mutable))
                 if self.peek() is not None and self.peek().kind == "comma":
                     self.eat()
                     continue
@@ -1072,17 +1075,17 @@ class SemanticChecker:
             raise CompileError(f"line {pos[0]}:{pos[1]}: unknown type '{name}'")
 
     def visit_lambda(self, node):
-        """The rewrite: struct lambda.<name> with one const field per capture, its member function
-        call, and a variable of that struct initialised here with the captured values."""
+        """The rewrite: struct lambda.<name> with one field per capture (mut only for [mut x]), its
+        member function call, and a variable of that struct initialised here with the captured values."""
         fields = []
-        for c in node.captures:
+        for c, mutable in node.captures:
             if any(f.name == c.text for f in fields):
                 raise CompileError(f"line {c.line}:{c.col}: '{c.text}' is captured twice")
             var = self.find_var(c.text)
             if var is None:
                 raise CompileError(f"line {c.line}:{c.col}: cannot capture '{c.text}': "
                                    f"no variable '{c.text}' is visible here")
-            fields.append(FieldDeclNode(c.line, c.col, var.type_name, (c.line, c.col), c.text, False))
+            fields.append(FieldDeclNode(c.line, c.col, var.type_name, (c.line, c.col), c.text, mutable))
         for p in node.params:
             if any(f.name == p.name for f in fields):
                 raise CompileError(f"line {p.line}:{p.col}: parameter '{p.name}' has the name of a capture "
@@ -1109,9 +1112,10 @@ class SemanticChecker:
         self.enclosing.pop()
         self.scopes, self.current_fn, self.current_struct = saved
 
-        items = [VarNode(c.line, c.col, c.text) for c in node.captures]
+        items = [VarNode(c.line, c.col, c.text) for c, _ in node.captures]
         init = InitListNode(node.line, node.col, items)
-        node.decl = DeclNode(node.line, node.col, struct.name, (node.line, node.col), node.name, False, init)
+        node.decl = DeclNode(node.line, node.col, struct.name, (node.line, node.col), node.name,
+                             any(f.mutable for f in fields), init)      # mut, so next() works right here
         node.decl.accept(self)                          # after the body: a lambda cannot call itself
 
     def lambda_struct_name(self, name):

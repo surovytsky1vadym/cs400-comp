@@ -14,7 +14,7 @@ Program
     Param b i32
     Block
       Lambda times -> i32
-        Capture factor
+        Capture factor const
         Param v i32
         Block
           Decl r i32 const
@@ -35,7 +35,7 @@ Program
   Decl k i32 mut
     Const 10
   Lambda add_k -> i32
-    Capture k
+    Capture k const
     Param y i32
     Block
       Decl r i32 const

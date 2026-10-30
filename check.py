@@ -4,6 +4,7 @@ check.py — test runner.
 
 tests/ok/NAME.txt   must compile; `lli` output must equal NAME.expected;
                     if NAME.ast exists, `--ast` output must equal it too;
+                    if NAME.ast_checked exists, so must the `--ast-checked` output;
                     if NAME.in exists, it is passed to the program as the standard input.
 tests/err/NAME.txt  must be rejected: non-zero exit, stderr equal to NAME.expected,
                     and no output file written.
@@ -43,6 +44,10 @@ def check_ok(src, base, tmp):
         _, ast, _ = run([PY, COMPILER, "--ast", src])
         if ast != read(base + ".ast"):
             return False, "--ast output differs from .ast"
+    if os.path.exists(base + ".ast_checked"):
+        _, ast, _ = run([PY, COMPILER, "--ast-checked", src])
+        if ast != read(base + ".ast_checked"):
+            return False, "--ast-checked output differs from .ast_checked"
     stdin = base + ".in" if os.path.exists(base + ".in") else None
     _, actual, err = run([LLI, out], stdin)
     expected = read(base + ".expected")

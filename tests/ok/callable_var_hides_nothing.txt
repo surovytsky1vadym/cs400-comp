@@ -1,0 +1,20 @@
+struct Scale
+{
+    i32 k
+    fn call := (i32 v) -> i32
+    {
+        exit k
+    }
+}
+fn t := () -> i32
+{
+    exit 7
+}
+fn u := () -> i32
+{
+    i32 r{t()}
+    exit r
+}
+Scale t{3}
+print(u())
+exit t.call(1)

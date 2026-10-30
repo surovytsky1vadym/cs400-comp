@@ -1,0 +1,15 @@
+struct Scale
+{
+    i32 k
+    fn call := (i32 v) -> i32
+    {
+        i32 r{v * k}
+        exit r
+    }
+}
+fn apply := (Scale f, i32 v) -> i32
+{
+    exit f(v)
+}
+Scale t{3}
+exit apply(t, 5)

@@ -1,0 +1,16 @@
+struct Counter
+{
+    i32 mut n
+    fn call := () -> i32
+    {
+        n := n + 1
+        exit n
+    }
+}
+struct Box
+{
+    Counter c
+}
+Box mut b{{0}}
+i32 a{b.c()}
+exit a

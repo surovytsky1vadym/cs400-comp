@@ -1,5 +1,5 @@
 """
-compiler.py  —  Practice 7
+compiler.py  —  Practice 8
 Languages and Compilers Design · CS400
 
 Usage:
@@ -341,6 +341,13 @@ class MemberCallNode(Node):
     def dump(self, indent=0):
         print(" " * indent + f"MemberCall {self.name}")
         self.obj.dump(indent + 2)
+        for a in self.args:
+            a.dump(indent + 2)
+
+class CallableCallNode(MemberCallNode):
+    """name(args) after the semantic pass: name.call(args), checked and generated as a member call."""
+    def dump(self, indent=0):
+        print(" " * indent + f"CallableCall {self.obj.path()}")
         for a in self.args:
             a.dump(indent + 2)
 
@@ -942,7 +949,12 @@ class SemanticChecker:
             if not call.fn.mutating:
                 continue
             for link in Parser.links(call.obj):
-                if isinstance(link, FieldNode):
+                if isinstance(call, CallableCallNode) and isinstance(link, (FieldNode, VarNode)):
+                    if not (link.field if isinstance(link, FieldNode) else link.decl).mutable:
+                        what = "it" if link is call.obj else f"'{link.name}'"
+                        raise CompileError(f"line {link.line}:{link.col}: cannot call '{call.obj.path()}': "
+                                           f"its 'call' changes it, and {what} is not mut")
+                elif isinstance(link, FieldNode):
                     if not link.field.mutable:
                         raise CompileError(f"line {link.line}:{link.col}: cannot call '{call.name}' on "
                                            f"'{call.obj.path()}': it changes the object, and field "
@@ -1138,7 +1150,9 @@ class SemanticChecker:
         return node.type
 
     def visit_field(self, node):
-        t = node.obj.accept(self)
+        return self.resolve_field(node, node.obj.accept(self))
+
+    def resolve_field(self, node, t):
         if t not in self.structs:
             line, col = node.dot if isinstance(node.obj, (CallNode, MemberCallNode, ReadNode)) else (node.line, node.col)
             raise CompileError(f"line {line}:{col}: '{node.obj.path()}' of type {t} has no fields")
@@ -1152,7 +1166,16 @@ class SemanticChecker:
 
     def visit_call(self, node):
         struct = self.current_struct
-        if struct is not None and node.name in struct.method_table:   # a sibling hides a global
+        var = self.find_var(node.name)
+        sibling = struct is not None and node.name in struct.method_table
+        if var is not None:                             # the call rule: a visible variable comes first
+            if sibling or node.name in self.fns:
+                raise CompileError(f"line {node.line}:{node.col}: '{node.name}' is both a variable and "
+                                   f"a function: rename one of them")
+            obj = VarNode(node.line, node.col, node.name)
+            self.make_callable(node, obj, var.type_name)
+            return self.visit_member_call(node)
+        if sibling:                                     # a sibling hides a global
             node.fn, node.on_this = struct.method_table[node.name], True
             self.current_fn.self_calls.append(node.fn)
         elif node.name in self.fns:
@@ -1163,13 +1186,25 @@ class SemanticChecker:
         node.type = node.fn.ret_type
         return node.type
 
+    def make_callable(self, node, obj, t):
+        """The rewrite: this call node becomes the member call obj.call(args), in place in the tree."""
+        if t not in self.structs:
+            raise CompileError(f"line {obj.line}:{obj.col}: '{obj.path()}' is not callable: it is {t}")
+        if "call" not in self.structs[t].method_table:
+            raise CompileError(f"line {obj.line}:{obj.col}: '{obj.path()}' is not callable: "
+                               f"{t} has no member function 'call'")
+        node.__class__ = CallableCallNode
+        node.obj, node.name, node.dot = obj, "call", (node.line, node.col)
+
     def check_args(self, node, fn):
+        target = node.obj.path() if isinstance(node, CallableCallNode) else fn.name
         if len(node.args) != len(fn.params):
-            raise CompileError(f"line {node.line}:{node.col}: function '{fn.name}' takes {len(fn.params)} "
+            what = f"'{target}'" if isinstance(node, CallableCallNode) else f"function '{target}'"
+            raise CompileError(f"line {node.line}:{node.col}: {what} takes {len(fn.params)} "
                                f"arguments, got {len(node.args)}")
         for arg, p in zip(node.args, fn.params):
             arg.accept(self)
-            self.check_assignable(arg, p.type_name, arg, f"pass '{p.name}' to '{fn.name}'")
+            self.check_assignable(arg, p.type_name, arg, f"pass '{p.name}' to '{target}'")
 
     def visit_member_call(self, node):
         t = node.obj.accept(self)
@@ -1177,6 +1212,11 @@ class SemanticChecker:
             raise CompileError(f"line {node.dot[0]}:{node.dot[1]}: cannot call '{node.name}' on "
                                f"'{node.obj.path()}' of type {t}: it is not a struct")
         struct = self.structs[t]
+        if node.name in struct.index:                   # obj.name(args) on a field: obj.name.call(args)
+            field = FieldNode(node.line, node.col, node.obj, node.name, node.dot)
+            t = self.resolve_field(field, t)
+            self.make_callable(node, field, t)
+            struct = self.structs[t]
         if node.name not in struct.method_table:
             raise CompileError(f"line {node.line}:{node.col}: struct '{t}' has no member function '{node.name}'")
         node.fn = struct.method_table[node.name]
@@ -1207,13 +1247,20 @@ class SemanticChecker:
     def visit_bool(self, node):
         return node.type
 
-    def lookup(self, node, name):
+    def find_var(self, name):
         for frame in reversed(self.scopes):
             if name in frame:
                 return frame[name]
         struct = self.current_struct
         if struct is not None and name in struct.index:  # then the fields of the object
             return struct.fields[struct.index[name]]
+        return None
+
+    def lookup(self, node, name):
+        decl = self.find_var(name)
+        if decl is not None:
+            return decl
+        struct = self.current_struct
         if name in self.structs:
             raise CompileError(f"line {node.line}:{node.col}: '{name}' is a type, not an object")
         if struct is not None:

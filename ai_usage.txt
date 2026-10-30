@@ -1,3 +1,34 @@
+AI Usage Log — Practice 8
+
+Tools: Claude Code (Claude Opus 5.5).
+
+Prompts (word for word)
+1. pr to main, just in case, '/Users/xnskie/Downloads/w08-practice (1).pdf'
+   look though file for now
+2. start practice 8 on a new practice-8 branch
+   Work on a new branch practice-8 from main. Commit after each step with real messages.
+   flag conflicts instead of choosing silently
+
+   Both rewrites in the semantic pass; reuse existing member-call checks and codegen
+   Use the PDF's reference error messages for lambdas
+   PDF examples as tests with exact expected output; earlier tests must still pass
+   Update ai_usage.txt with my prompts word for word, leave "what I understood" to me
+   Don't push. At the end, give me the demo commands the PDF lists
+
+What I understood
+[to be written by the student]
+
+Taken as-is from the AI
+- src/compiler.py: the call rule and the rewrite into CallableCallNode, obj.name(args)
+  on a field, the lambda parser, the rewrite into struct lambda.<name>, mut captures,
+  --ast-checked and the lambda and callable errors.
+- check.py: NAME.ast_checked. grammar.ebnf, README.md.
+- Tests: tests/ok/callable_*, lambda_*; tests/err/callable_*, lambda_*.
+
+Changed by the student
+[to be written by the student]
+
+
 AI Usage Log — Practice 7
 
 Tools: Claude Code (Claude Opus 5.5).

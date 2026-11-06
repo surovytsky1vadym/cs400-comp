@@ -1,0 +1,7 @@
+fn twice := (i64 v) -> i64
+{
+    i64 r{v * 2}
+    exit r
+}
+i32 small{2000000000}
+exit twice(small)

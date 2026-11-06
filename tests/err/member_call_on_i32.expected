@@ -1,0 +1,1 @@
+compilation error: line 22:7: cannot call 'd2' on 'n' of type i32: it is not a struct

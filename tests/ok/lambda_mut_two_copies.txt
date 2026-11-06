@@ -1,0 +1,15 @@
+i32 n{5}
+fn a := [mut n]() -> i32
+{
+    n := n + 1
+    exit n
+}
+fn b := [mut n]() -> i32
+{
+    n := n + 10
+    exit n
+}
+print(a())
+print(b())
+print(a())
+exit n

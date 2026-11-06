@@ -1,0 +1,1 @@
+compilation error: line 7:8: struct 'Point' has no field 'z'

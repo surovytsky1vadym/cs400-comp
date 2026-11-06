@@ -1,0 +1,23 @@
+struct Point
+{
+    i32 mut x
+    i32 y
+    fn sum := () -> i32
+    {
+        i32 waste{x * 100}
+        i32 r{x + y}
+        exit r
+    }
+}
+Point mut p{1, 2}
+p.x := 5
+Point mut q{3, 4}
+q.x := 10
+fn add := [q](i32 d) -> i32
+{
+    i32 unused{d * 2}
+    i32 r{d + 1}
+    exit r
+}
+i32 s{q.sum()}
+exit add(s)

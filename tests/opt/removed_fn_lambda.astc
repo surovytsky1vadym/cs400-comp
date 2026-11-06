@@ -1,0 +1,15 @@
+Program
+  Fn ping -> i32
+    Param n i32
+    Block
+      Exit
+        Call pong
+          Var n
+  Fn pong -> i32
+    Param n i32
+    Block
+      Exit
+        Call ping
+          Var n
+  Exit
+    Const 3

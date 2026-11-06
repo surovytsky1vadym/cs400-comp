@@ -1,0 +1,21 @@
+struct Box
+{
+    i32 v
+    fn plus := (i32 v) -> i32
+    {
+        i32 r{v + 1}
+        exit r
+    }
+    fn local := () -> i32
+    {
+        i32 mut v{40}
+        v := v + 2
+        exit v
+    }
+}
+Box b{7}
+i32 a{b.plus(10)}
+i32 c{b.local()}
+print(b)
+i32 res{a + c}
+exit res

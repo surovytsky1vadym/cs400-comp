@@ -1,0 +1,27 @@
+program    ::= { struct } { fn } { statement } exit
+struct     ::= "struct" ident NL "{" NL field_decl { field_decl } { fn } "}" NL
+field_decl ::= type [ "mut" ] ident NL
+fn         ::= "fn" ident ":=" "(" [ type ident { "," type ident } ] ")" "->" type NL block
+statement  ::= decl | assign | if | while | print | lambda
+lambda     ::= "fn" ident ":=" "[" [ capture { "," capture } ] "]" "(" [ type ident { "," type ident } ] ")" "->" type NL block
+capture    ::= [ "mut" ] ident
+decl       ::= type [ "mut" ] ident init_list
+init_list  ::= "{" init { "," init } "}"
+init       ::= expr | init_list
+type       ::= "i32" | "i64" | "bool" | ident
+assign     ::= ident { "." ident } ":=" expr
+if         ::= "if" expr NL block [ "else" NL block ]
+while      ::= "while" expr NL block
+block      ::= "{" NL { statement } [ exit NL ] "}" NL      (not empty)
+exit       ::= "exit" factor
+expr       ::= arith [ ( "==" | "!=" ) arith ]
+arith      ::= term { ( "+" | "-" ) term }
+term       ::= factor { "*" factor }
+factor     ::= number | "true" | "false" | ident | field | call | member_call | read | "!" factor
+field      ::= ident "." ident { "." ident }
+call       ::= ident "(" [ expr { "," expr } ] ")"
+member_call ::= ident { "." ident } "." ident "(" [ expr { "," expr } ] ")"
+read       ::= "read" "(" ")"
+print      ::= "print" "(" ( string | expr ) ")"
+string     ::= '"' { any byte except '"' and newline } '"'
+(additional task: a "." may also follow a call whose result is a struct: p.moved(1).x, origin().moved(7))

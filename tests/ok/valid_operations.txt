@@ -1,0 +1,9 @@
+i32 a{3}
+i32 b{7}
+i32 mut s{a+b}
+i32 mut d{b-a}
+i32 mut p{a*b}
+s := s + 1
+d := d - 1
+p := p * 1
+exit p

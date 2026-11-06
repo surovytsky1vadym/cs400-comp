@@ -1,0 +1,12 @@
+struct P
+{
+    i32 x
+    i32 y
+}
+P p{3, 4}
+fn f := [p]() -> i32
+{
+    i32 r{p.x + p.y}
+    exit r
+}
+exit f()

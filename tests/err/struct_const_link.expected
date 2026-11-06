@@ -1,0 +1,1 @@
+compilation error: line 14:3: cannot assign to 'c.center.x': field 'center' is not mut

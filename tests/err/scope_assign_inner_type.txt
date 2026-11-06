@@ -1,0 +1,7 @@
+i32 mut x{1}
+if true
+{
+    bool mut x{true}
+    x := 5
+}
+exit x

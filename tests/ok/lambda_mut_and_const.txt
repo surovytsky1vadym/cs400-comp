@@ -1,0 +1,10 @@
+i32 step{2}
+i32 mut t{1}
+fn f := [step, mut t]() -> i32
+{
+    t := t + step
+    exit t
+}
+t := 100
+print(f())
+exit f()

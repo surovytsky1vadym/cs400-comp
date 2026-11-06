@@ -1,0 +1,23 @@
+struct Ping
+{
+    i32 mut n
+    fn a := (i32 k) -> i32
+    {
+        i32 mut r{0}
+        if k != 0
+        {
+            r := b(k - 1)
+        }
+        exit r
+    }
+    fn b := (i32 k) -> i32
+    {
+        if k == 0
+        {
+            n := 1
+        }
+        exit a(k)
+    }
+}
+Ping p{0}
+exit p.a(3)

@@ -1,0 +1,15 @@
+struct S
+{
+    i32 x
+    fn m := (i32 p) -> i32
+    {
+        fn f := [x, p](i32 v) -> i32
+        {
+            i32 r{x * p + v}
+            exit r
+        }
+        exit f(1)
+    }
+}
+S s{5}
+exit s.m(2)

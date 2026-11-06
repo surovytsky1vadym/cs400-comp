@@ -1,0 +1,21 @@
+Program
+  Fn shout -> i32
+    Param a i32
+    Block
+      Print
+        Var a
+      Exit
+        Var a
+  Fn relay -> i32
+    Param a i32
+    Block
+      Exit
+        Call shout
+          BinOp +
+            Var a
+            Const 1
+  Decl x i32 const
+    Call relay
+      Const 1
+  Exit
+    Const 0

@@ -1,0 +1,6 @@
+i32 a{2000000000}
+i64 b{a}
+i64 c{b + a}
+i64 mut d{b * 2}
+d := a
+exit c

@@ -1,0 +1,12 @@
+i32 a{2}
+fn dbl := [a](i32 v) -> i32
+{
+    i32 r{a * v}
+    exit r
+}
+fn quad := [dbl](i32 v) -> i32
+{
+    i32 r{dbl(dbl(v))}
+    exit r
+}
+exit quad(3)

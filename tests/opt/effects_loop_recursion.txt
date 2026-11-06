@@ -1,0 +1,26 @@
+fn spin := (i32 n) -> i32
+{
+    i32 mut i{0}
+    while i != n
+    {
+        i := i + 1
+    }
+    exit i
+}
+fn down := (i32 n) -> i32
+{
+    if n == 0
+    {
+        exit 0
+    }
+    exit down(n - 1)
+}
+fn pure := (i32 n) -> i32
+{
+    i32 r{n + 1}
+    exit r
+}
+i32 a{spin(3)}
+i32 b{down(3)}
+i32 c{pure(3)}
+exit 7

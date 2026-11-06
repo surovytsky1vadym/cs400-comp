@@ -1,0 +1,11 @@
+struct Scale
+{
+    i32 k
+    fn call := (i32 v) -> i32
+    {
+        exit k
+    }
+}
+Scale t{3}
+i32 a{t(true)}
+exit a

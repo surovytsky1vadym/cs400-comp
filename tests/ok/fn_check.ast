@@ -1,0 +1,26 @@
+Program
+  Fn check -> bool
+    Param x i32
+    Param flag bool
+    Block
+      Decl y i32 mut
+        Const 3
+      If
+        Var flag
+        Block
+          Assign y
+            BinOp +
+              Var y
+              Var x
+      Decl result bool const
+        BinOp ==
+          Var y
+          Const 10
+      Exit
+        Var result
+  Decl a bool const
+    Call check
+      Const 7
+      Bool true
+  Exit
+    Var a

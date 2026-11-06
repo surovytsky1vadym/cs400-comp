@@ -1,0 +1,63 @@
+Program
+  Struct Point
+    Member x i32 const
+    Member y i32 const
+    MemberFn sum -> i32
+      Block
+        Decl r i32 const
+          BinOp +
+            Var x
+            Var y
+        Exit
+          Var r
+  Fn scale -> i32
+    Param v i32
+    Param k i32
+    Block
+      Decl r i32 const
+        BinOp *
+          Var v
+          Var k
+      Exit
+        Var r
+  Decl p Point const
+    Init
+      Const 3
+      Const 4
+  Decl i i32 mut
+    Const 0
+  Decl acc i32 mut
+    Const 0
+  While
+    BinOp !=
+      Var i
+      Const 3
+    Block
+      Assign acc
+        BinOp +
+          Var acc
+          Call scale
+            MemberCall sum
+              Var p
+            Const 2
+      Assign i
+        BinOp +
+          Var i
+          Const 1
+  Lambda plus -> i32
+    Struct lambda.plus
+      Member acc i32 const
+      MemberFn call -> i32
+        Param d i32
+        Block
+          Decl r i32 const
+            BinOp +
+              Var acc
+              Var d
+          Exit
+            Var r
+    Decl plus lambda.plus const
+      Var acc
+  Exit
+    CallableCall plus
+      Const 1

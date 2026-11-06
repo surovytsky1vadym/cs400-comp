@@ -1439,6 +1439,211 @@ def wider(a, b):
     return "i64" if "i64" in (a, b) else "i32"
 
 # ---------------------------------------------------------------------------
+# Optimization: --remove-unused (after the checker, before code generation)
+# ---------------------------------------------------------------------------
+def children(node):
+    """The direct sub-nodes of a statement or an expression. A lambda gives only its captured
+    values: its body is a function of its own. The target of := is not a read, so it is left out."""
+    if isinstance(node, BlockNode):
+        return node.stmts + ([node.exit_node] if node.exit_node else [])
+    if isinstance(node, IfNode):
+        return [node.cond, node.then_block] + ([node.else_block] if node.else_block else [])
+    if isinstance(node, WhileNode):
+        return [node.cond, node.body]
+    if isinstance(node, DeclNode):
+        return [node.init]
+    if isinstance(node, AssignNode):
+        return [node.value]
+    if isinstance(node, ExitNode):
+        return [node.value]
+    if isinstance(node, PrintNode):
+        return [node.arg]
+    if isinstance(node, LambdaNode):
+        return list(node.decl.init.items)
+    if isinstance(node, InitListNode):
+        return list(node.items)
+    if isinstance(node, BinOpNode):
+        return [node.left, node.right]
+    if isinstance(node, NotNode):
+        return [node.operand]
+    if isinstance(node, FieldNode):
+        return [node.obj]
+    if isinstance(node, MemberCallNode):
+        return [node.obj] + node.args
+    if isinstance(node, CallNode):
+        return list(node.args)
+    return []                                           # Var, Const, Bool, String, Read
+
+def walk(node):
+    yield node
+    for c in children(node):
+        yield from walk(c)
+
+def has_call_or_read(expr):
+    """Task 1 rule: any call may print or read, so a value with a call is kept."""
+    return any(isinstance(n, (CallNode, MemberCallNode, ReadNode)) for n in walk(expr))
+
+class Effects:
+    """The additional task: the functions whose call may be observed. Directly: the body prints,
+    calls read(), has a while, or the function is a mutating member function, or it calls itself
+    (directly or through others: it may never return). Then every caller of such a function,
+    repeated until nothing changes. A callable object's call is the call of its member 'call'."""
+
+    def __init__(self, tree):
+        fns = tree.fns + [m for s in tree.structs for m in s.methods]
+        callees = {}
+        acting = set()
+        for f in fns:
+            body = list(walk(f.body))
+            callees[f] = {n.fn for n in body if isinstance(n, (CallNode, MemberCallNode))}
+            if getattr(f, "mutating", False) or any(isinstance(n, (PrintNode, ReadNode, WhileNode)) for n in body):
+                acting.add(f)
+        for f in fns:
+            if f in self.reachable(f, callees):         # recursion: the call may not return
+                acting.add(f)
+        changed = True
+        while changed:
+            changed = False
+            for f in fns:
+                if f not in acting and callees[f] & acting:
+                    acting.add(f)
+                    changed = True
+        self.acting = acting
+
+    @staticmethod
+    def reachable(f, callees):
+        """Every function a call of f may end up calling."""
+        seen, todo = set(), list(callees[f])
+        while todo:
+            g = todo.pop()
+            if g not in seen:
+                seen.add(g)
+                todo.extend(callees[g])
+        return seen
+
+    def may_act(self, expr):
+        return any(isinstance(n, ReadNode) or (isinstance(n, (CallNode, MemberCallNode)) and n.fn in self.acting)
+                   for n in walk(expr))
+
+class UseCounter:
+    """One round: the reads of every declaration (per declaration, through Var.decl, not per name)
+    and the calls of every global function, wherever they stand."""
+
+    def __init__(self, may_act):
+        self.may_act = may_act        # expr -> True if evaluating it may be observed
+        self.reads = {}               # id(DeclNode) -> number of reads
+        self.calls = {}               # id(FnNode) -> number of calls, global functions only
+        self.nodes = {}               # id -> the node, for the trace
+        self.lambdas = set()          # id of the struct of every lambda still in the tree
+
+    def visit_program(self, node):
+        for s in node.structs:
+            if not s.lambda_name:                       # a lambda's body is reached at its place
+                for m in s.methods:
+                    m.accept(self)
+        for f in node.fns:
+            self.calls.setdefault(id(f), 0)
+            self.nodes[id(f)] = f
+            f.accept(self)
+        for stmt in node.stmts:
+            stmt.accept(self)
+        node.exit_node.accept(self)
+
+    def visit_fn(self, node):
+        node.body.accept(self)                          # parameters are not counted: never removed
+
+    visit_member_fn = visit_fn
+
+    def visit_lambda(self, node):
+        self.lambdas.add(id(node.struct))
+        self.visit_children(node)                       # the captures are reads
+        node.struct.methods[0].accept(self)             # the body of call
+
+    def visit_decl(self, node):
+        self.reads.setdefault(id(node), 0)
+        self.nodes[id(node)] = node
+        if self.may_act(node.init):                     # kept: may print
+            self.read(node)
+        node.init.accept(self)
+
+    def visit_assign(self, node):                       # the target is not a read,
+        if self.may_act(node.value):                    # unless the value may print
+            self.read(Parser.root(node.target).decl)
+        node.value.accept(self)
+
+    def visit_var(self, node):
+        self.read(node.decl)
+
+    def visit_call(self, node):
+        if type(node.fn) is FnNode:                     # a global function, not a sibling member
+            self.calls[id(node.fn)] = self.calls.get(id(node.fn), 0) + 1
+        self.visit_children(node)
+
+    def visit_children(self, node):
+        for c in children(node):
+            c.accept(self)
+
+    visit_block = visit_if = visit_while = visit_exit = visit_print = visit_children
+    visit_init_list = visit_binop = visit_not = visit_field = visit_member_call = visit_children
+    visit_read = visit_const = visit_bool = visit_string = visit_children
+
+    def read(self, decl):
+        self.reads[id(decl)] = self.reads.get(id(decl), 0) + 1
+
+class Pruner:
+    """Rebuilds every statement list without the dead declarations and the := to them."""
+
+    def __init__(self, dead):
+        self.dead = dead              # ids of DeclNodes
+
+    def prune(self, tree):
+        tree.stmts = self.kept(tree.stmts)
+        for f in tree.fns + [m for s in tree.structs for m in s.methods]:
+            f.body.stmts = self.kept(f.body.stmts)
+
+    def kept(self, stmts):
+        out = [s for s in stmts if not self.is_dead(s)]
+        for s in out:                                   # an if whose block becomes empty stays
+            if isinstance(s, IfNode):
+                for b in (s.then_block, s.else_block):
+                    if b:
+                        b.stmts = self.kept(b.stmts)
+            elif isinstance(s, WhileNode):
+                s.body.stmts = self.kept(s.body.stmts)
+        return out
+
+    def is_dead(self, stmt):
+        if isinstance(stmt, DeclNode):
+            return id(stmt) in self.dead
+        if isinstance(stmt, AssignNode):
+            return id(Parser.root(stmt.target).decl) in self.dead
+        return False
+
+def remove_unused(tree, effects=True, trace=False):
+    """Removes unused declarations and uncalled global functions until a round removes nothing.
+    effects=False keeps every value with a call (Task 1); True keeps only calls of functions
+    with an effect (the additional task)."""
+    may_act = Effects(tree).may_act if effects else has_call_or_read
+    iteration = 0
+    while True:
+        iteration += 1
+        counter = UseCounter(may_act)
+        tree.accept(counter)
+        dead_decls = {d for d, k in counter.reads.items() if k == 0}
+        dead_fns = {f for f, k in counter.calls.items() if k == 0}
+        if trace:
+            for key, n in counter.nodes.items():        # parameters and fields are read, never listed
+                what, k = ("fn", counter.calls[key]) if isinstance(n, FnNode) else ("decl", counter.reads[key])
+                print(f"iteration {iteration}: {what} {n.name} (line {n.line}:{n.col}) {k} -> "
+                      f"{'remove' if k == 0 else 'keep'}", file=sys.stderr)
+        # the struct of a lambda that went with its function goes too
+        tree.structs = [s for s in tree.structs if not s.lambda_name or id(s) in counter.lambdas]
+        if not dead_decls and not dead_fns:
+            return tree
+        tree.fns = [f for f in tree.fns if id(f) not in dead_fns]
+        Pruner(dead_decls).prune(tree)
+
+# ---------------------------------------------------------------------------
 # Code Generation (reads what the checker stored, checks nothing)
 # ---------------------------------------------------------------------------
 I1, I8, I32, I64 = ir.IntType(1), ir.IntType(8), ir.IntType(32), ir.IntType(64)
@@ -1731,24 +1936,28 @@ class CodeGen:
 # Entry point
 # ---------------------------------------------------------------------------
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python3 compiler.py [--ast | --ast-checked] input.txt [output.ll]", file=sys.stderr)
+    usage = ("Usage: python3 compiler.py [--remove-unused [--keep-calls]] [--ast | --ast-checked] "
+             "input.txt [output.ll]")
+    flags = {a for a in sys.argv[1:] if a.startswith("--")}      # flags may stand anywhere
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    unknown = flags - {"--ast", "--ast-checked", "--remove-unused", "--keep-calls"}
+    if unknown:
+        print(f"compilation error: unknown option '{sorted(unknown)[0]}'\n{usage}", file=sys.stderr)
         sys.exit(1)
-
-    dump_ast = dump_checked = False
-    args = sys.argv[1:]
-    if args[0] in ("--ast", "--ast-checked"):
-        dump_ast, dump_checked = args[0] == "--ast", args[0] == "--ast-checked"
-        flag = args[0]
-        args = args[1:]
+    dump_ast, dump_checked = "--ast" in flags, "--ast-checked" in flags
+    optimize = "--remove-unused" in flags
+    if dump_ast and dump_checked:
+        print(usage, file=sys.stderr)
+        sys.exit(1)
+    if dump_ast or dump_checked:
         if len(args) != 1:
-            print(f"Usage: python3 compiler.py {flag} input.txt", file=sys.stderr)
+            print(f"Usage: python3 compiler.py {'--ast' if dump_ast else '--ast-checked'} input.txt", file=sys.stderr)
             sys.exit(1)
         src_path = args[0]
         out_path = None
     else:
         if len(args) != 2:
-            print("Usage: python3 compiler.py input.txt output.ll", file=sys.stderr)
+            print(usage, file=sys.stderr)
             sys.exit(1)
         src_path = args[0]
         out_path = args[1]
@@ -1773,6 +1982,8 @@ def main():
             sys.exit(0)
 
         ast.accept(SemanticChecker())     # every check happens here, before any IR
+        if optimize:                      # only a program the checker accepted
+            remove_unused(ast, effects="--keep-calls" not in flags, trace=bool(os.environ.get("OPT_TRACE")))
         if dump_checked:
             ast.dump()
             sys.exit(0)

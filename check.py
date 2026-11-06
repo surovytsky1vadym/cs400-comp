@@ -8,8 +8,13 @@ tests/ok/NAME.txt   must compile; `lli` output must equal NAME.expected;
                     if NAME.in exists, it is passed to the program as the standard input.
 tests/err/NAME.txt  must be rejected: non-zero exit, stderr equal to NAME.expected,
                     and no output file written.
+tests/opt/NAME.txt  `lli` output must equal NAME.expected both without and with --remove-unused;
+                    `--remove-unused --ast-checked` must equal NAME.astc.
 
-Usage: python3 check.py [-v]     (LLI=/path/to/lli to override the interpreter)
+Usage: python3 check.py [-v] [--remove-unused]   (LLI=/path/to/lli to override the interpreter)
+With --remove-unused (or REMOVE_UNUSED=1) every tests/ok and tests/err program is compiled with
+the flag: the output and the errors must stay the same. NAME.ast_checked is not compared then,
+since it is the tree before the pass.
 """
 
 import os
@@ -22,6 +27,8 @@ COMPILER = os.path.join(ROOT, "src", "compiler.py")
 TESTS = os.path.join(ROOT, "tests")
 LLI = os.environ.get("LLI", "lli")
 PY = sys.executable
+OPT = "--remove-unused" in sys.argv or bool(os.environ.get("REMOVE_UNUSED"))
+FLAGS = ["--remove-unused"] if OPT else []
 
 
 def read(path):
@@ -35,19 +42,11 @@ def run(cmd, stdin_path=None):
     return p.returncode, p.stdout.strip(), p.stderr.strip()
 
 
-def check_ok(src, base, tmp):
+def compile_and_run(src, base, tmp, flags):
     out = os.path.join(tmp, "out.ll")
-    code, _, err = run([PY, COMPILER, src, out])
+    code, _, err = run([PY, COMPILER, *flags, src, out])
     if code != 0:
         return False, f"compilation failed: {err}"
-    if os.path.exists(base + ".ast"):
-        _, ast, _ = run([PY, COMPILER, "--ast", src])
-        if ast != read(base + ".ast"):
-            return False, "--ast output differs from .ast"
-    if os.path.exists(base + ".ast_checked"):
-        _, ast, _ = run([PY, COMPILER, "--ast-checked", src])
-        if ast != read(base + ".ast_checked"):
-            return False, "--ast-checked output differs from .ast_checked"
     stdin = base + ".in" if os.path.exists(base + ".in") else None
     _, actual, err = run([LLI, out], stdin)
     expected = read(base + ".expected")
@@ -56,11 +55,23 @@ def check_ok(src, base, tmp):
     return True, actual
 
 
+def check_ok(src, base, tmp):
+    if os.path.exists(base + ".ast"):
+        _, ast, _ = run([PY, COMPILER, "--ast", src])
+        if ast != read(base + ".ast"):
+            return False, "--ast output differs from .ast"
+    if os.path.exists(base + ".ast_checked") and not OPT:
+        _, ast, _ = run([PY, COMPILER, "--ast-checked", src])
+        if ast != read(base + ".ast_checked"):
+            return False, "--ast-checked output differs from .ast_checked"
+    return compile_and_run(src, base, tmp, FLAGS)
+
+
 def check_err(src, base, tmp):
     out = os.path.join(tmp, "out.ll")
     if os.path.exists(out):
         os.remove(out)
-    code, _, err = run([PY, COMPILER, src, out])
+    code, _, err = run([PY, COMPILER, *FLAGS, src, out])
     expected = read(base + ".expected")
     if code == 0:
         return False, "compiled, but an error was expected"
@@ -71,11 +82,22 @@ def check_err(src, base, tmp):
     return True, err
 
 
+def check_opt(src, base, tmp):
+    for flags in ([], ["--remove-unused"]):
+        passed, detail = compile_and_run(src, base, tmp, flags)
+        if not passed:
+            return False, f"{' '.join(flags) or 'without the flag'}: {detail}"
+    _, ast, err = run([PY, COMPILER, "--remove-unused", "--ast-checked", src])
+    if ast != read(base + ".astc"):
+        return False, f"--remove-unused --ast-checked output differs from .astc {err}".rstrip()
+    return True, detail
+
+
 def main():
     verbose = "-v" in sys.argv
     rows = []
     with tempfile.TemporaryDirectory() as tmp:
-        for folder, fn in (("ok", check_ok), ("err", check_err)):
+        for folder, fn in (("ok", check_ok), ("err", check_err), ("opt", check_opt)):
             d = os.path.join(TESTS, folder)
             for name in sorted(os.listdir(d)):
                 if not name.endswith(".txt"):
@@ -95,7 +117,8 @@ def main():
         print(line)
     failed = sum(1 for r in rows if not r[2])
     print("-" * (width + 20))
-    print(f"{len(rows) - failed} passed, {failed} failed, {len(rows)} total")
+    print(f"{len(rows) - failed} passed, {failed} failed, {len(rows)} total"
+          + (" (tests/ok and tests/err with --remove-unused)" if OPT else ""))
     sys.exit(1 if failed else 0)
 
 

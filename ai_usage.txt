@@ -1,0 +1,35 @@
+AI Usage Log — Practice 10
+
+Tools: Claude Code (Claude Opus 5.5).
+
+Prompts (word for word)
+1. check CS400_Practice_10.pdf in downloads, this is your task for today, max grade, no mistakes, high
+   stakes with no brakes. Provide me with some cakes and make sure every task here lays
+
+What I understood
+So, from what i get, the compiler makes a .ll file, llc turns it into an .o and clang glues it together with the C library, 
+so you get a program you can actually run. printf and scanf show up as U in nm because they're only declared and 
+not written by me, so the linker finds them later, and extern is kind of the same idea for my own C functions
+and i think only i32 and i64 can go into C because those are just normal ints for C too.
+
+Taken as-is from the AI
+- Task 1: tests/io/points.txt (the program from the task sheet) and its sessions points.sheet,
+  points.none, points.all (.in / .expected); full_compiler.sh. The compiler needed no change for
+  Task 1: print(p) already walks the field table (print_struct, Practice 7).
+- check.py: the tests/io and tests/ffi suites (build with compiler + llc -relocation-model=pic +
+  clang -fPIE, feed every NAME.S.in, compare stdout exactly, exit status 0), LLC / CLANG overrides;
+  --remove-unused applies to these suites too.
+- Additional task, src/compiler.py: the extern keyword, ExternFnNode, Parser.parse_extern (signature
+  split out of parse_signature_and_body into parse_signature), 'extern' rejected inside a block and a
+  struct, SemanticChecker.check_extern (i32/i64 only, names the module already uses: main, printf,
+  scanf, fn_<name>, <Struct>_<member>), CodeGen declares an extern under its C name; --remove-unused:
+  an extern counts as a global function and its calls are kept (Effects treats it as acting).
+- Tests: tests/ffi/geometry (.txt, .c, sessions sheet and small), tests/ok/extern_libc (abs, llabs
+  with i64, runs under lli), tests/opt/extern_unused, 16 tests/err/extern_* programs.
+- README.md (Practice 10 section, tool setup on Apple Silicon), grammar.ebnf.
+
+Not done by the AI
+- reflection.md: written by the student without an AI tool, as the task requires.
+
+Changed by the student
+To be completely and brutally honest, no thing was really changed, i took what was as-is, so no additional rewrites were made by me.

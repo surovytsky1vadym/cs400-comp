@@ -1,0 +1,21 @@
+Program
+  Decl n i32 const
+    Const 4
+  If
+    BinOp !=
+      Var n
+      Const 0
+    Block
+      Decl shown i32 const
+        BinOp +
+          Var n
+          Const 1
+      Print
+        Var shown
+  If
+    BinOp ==
+      Var n
+      Const 4
+    Block
+  Exit
+    Var n

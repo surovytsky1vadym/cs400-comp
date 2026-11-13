@@ -1,0 +1,11 @@
+i32 start{10}
+fn c := [mut start]() -> i32
+{
+    start := start + 1
+    exit start
+}
+i32 a{c()}
+i32 b{c()}
+print(start)
+i32 r{a + b}
+exit r

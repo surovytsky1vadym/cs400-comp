@@ -1,0 +1,3 @@
+i32 a{read()}
+i32 b{read()}
+exit b

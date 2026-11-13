@@ -1,0 +1,22 @@
+Program
+  Decl a bool const
+    Bool true
+  Decl b bool const
+    Bool false
+  Decl c bool const
+    Not
+      Var a
+  Decl d bool mut
+    Not
+      Var b
+  Assign d
+    Not
+      Var c
+  If
+    Not
+      Var c
+    Block
+      Exit
+        Var d
+  Exit
+    Const 0

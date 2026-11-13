@@ -1,0 +1,3 @@
+Circle{center: Point{x: 111, y: 2}, radius: 3}
+moved through the field
+Program exit with result 111

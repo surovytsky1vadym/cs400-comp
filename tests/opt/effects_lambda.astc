@@ -1,0 +1,31 @@
+Program
+  Decl k i32 const
+    Const 5
+  Lambda noisy -> i32
+    Struct lambda.noisy
+      Member k i32 const
+      MemberFn call -> i32
+        Block
+          Print
+            Var k
+          Exit
+            Var k
+    Decl noisy lambda.noisy const
+      Var k
+  Lambda calm -> i32
+    Struct lambda.calm
+      Member k i32 const
+      MemberFn call -> i32
+        Block
+          Decl r i32 const
+            BinOp *
+              Var k
+              Const 2
+          Exit
+            Var r
+    Decl calm lambda.calm const
+      Var k
+  Decl a i32 const
+    CallableCall noisy
+  Exit
+    Const 1

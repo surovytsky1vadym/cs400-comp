@@ -1,0 +1,10 @@
+i32 mut x{1}
+fn f := [x]() -> i32
+{
+    exit x
+}
+x := 2
+print(f())
+x := 3
+print(x)
+exit f()

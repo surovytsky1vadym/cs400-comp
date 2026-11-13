@@ -1,0 +1,10 @@
+i32 a{3}
+if a == 4
+{
+    exit 1
+}
+else
+{
+    exit 2
+}
+exit 3

@@ -1,0 +1,17 @@
+fn shout := (i32 a) -> i32
+{
+    print(a)
+    exit a
+}
+fn relay := (i32 a) -> i32
+{
+    exit shout(a + 1)
+}
+fn calm := (i32 a) -> i32
+{
+    i32 r{a + 1}
+    exit r
+}
+i32 x{relay(1)}
+i32 y{calm(1)}
+exit 0

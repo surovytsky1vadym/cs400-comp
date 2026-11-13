@@ -1,0 +1,8 @@
+i32 a{5}
+fn f := [a](i64 v) -> i64
+{
+    i64 r{v + a}
+    exit r
+}
+i64 x{f(a)}
+exit x

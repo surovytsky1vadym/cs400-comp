@@ -1,0 +1,1 @@
+compilation error: line 6:9: function 'isZero' must exit with bool, got i32

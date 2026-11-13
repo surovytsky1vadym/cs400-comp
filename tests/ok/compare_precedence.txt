@@ -1,0 +1,4 @@
+i32 x{3}
+i32 y{1}
+bool c{x * 2 != y + 5}
+exit c

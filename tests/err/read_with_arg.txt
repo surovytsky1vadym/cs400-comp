@@ -1,0 +1,2 @@
+i32 a{read(5)}
+exit a

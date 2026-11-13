@@ -1,0 +1,23 @@
+struct Pair
+{
+    i32 a
+    i64 b
+    fn spread := () -> i64
+    {
+        i64 r{abs(a) + llabs(b)}
+        exit r
+    }
+}
+extern fn abs := (i32 v) -> i32
+extern fn llabs := (i64 v) -> i64
+fn dist := (i32 x, i32 y) -> i32
+{
+    exit abs(x - y)
+}
+i64 big{0 - 5000000000}
+print(llabs(big))
+print(abs(0 - 7))
+print(dist(3, 10))
+Pair p{0 - 2, big}
+print(p.spread())
+exit abs(dist(10, 3) - 20)

@@ -1,0 +1,18 @@
+fn ping := (i32 n) -> i32
+{
+    exit pong(n)
+}
+fn pong := (i32 n) -> i32
+{
+    exit ping(n)
+}
+fn maker := (i32 n) -> i32
+{
+    fn inner := [n](i32 d) -> i32
+    {
+        i32 r{n + d}
+        exit r
+    }
+    exit inner(1)
+}
+exit 3

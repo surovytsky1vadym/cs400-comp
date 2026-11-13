@@ -1,0 +1,14 @@
+i32 v{0}
+fn inc := [mut v](i32 by) -> i32
+{
+    v := v + by
+    exit v
+}
+i32 mut i{0}
+i32 mut last{0}
+while i != 4
+{
+    last := inc(i)
+    i := i + 1
+}
+exit last

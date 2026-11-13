@@ -1,0 +1,1 @@
+compilation error: line 23:6: cannot call 'a' on 'p': it changes the object, and 'p' is not mut

@@ -1,0 +1,69 @@
+Program
+  Fn sq -> i32
+    Param v i32
+    Block
+      Decl r i32 const
+        BinOp *
+          Var v
+          Var v
+      Exit
+        Var r
+  Fn sum_scaled -> i32
+    Param factor i32
+    Param a i32
+    Param b i32
+    Block
+      Lambda times -> i32
+        Struct lambda.times
+          Member factor i32 const
+          MemberFn call -> i32
+            Param v i32
+            Block
+              Decl r i32 const
+                BinOp *
+                  Var factor
+                  Call sq
+                    Var v
+              Exit
+                Var r
+        Decl times lambda.times const
+          Var factor
+      Decl s i32 const
+        BinOp +
+          CallableCall times
+            Var a
+          CallableCall times
+            Var b
+      Exit
+        Var s
+  Decl k i32 mut
+    Const 10
+  Lambda add_k -> i32
+    Struct lambda.add_k
+      Member k i32 const
+      MemberFn call -> i32
+        Param y i32
+        Block
+          Decl r i32 const
+            BinOp +
+              Var k
+              Var y
+          Exit
+            Var r
+    Decl add_k lambda.add_k const
+      Var k
+  Assign k
+    Const 100
+  Print
+    CallableCall add_k
+      Const 5
+  Print
+    Var k
+  Print
+    Call sum_scaled
+      Const 2
+      Const 3
+      Const 4
+  Exit
+    CallableCall add_k
+      Const 1

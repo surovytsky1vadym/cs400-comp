@@ -1,0 +1,20 @@
+i32 mut r{0}
+bool c{true}
+if c
+{
+    fn f := []() -> i32
+    {
+        exit 1
+    }
+    r := r + f()
+}
+if c
+{
+    fn f := [r]() -> i32
+    {
+        i32 v{r + 10}
+        exit v
+    }
+    r := f()
+}
+exit r

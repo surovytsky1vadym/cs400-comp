@@ -1,0 +1,1 @@
+compilation error: line 23:7: cannot call 'shift' on 'q': it changes the object, and 'q' is not mut

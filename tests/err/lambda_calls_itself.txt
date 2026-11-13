@@ -1,0 +1,6 @@
+fn f := [](i32 v) -> i32
+{
+    i32 r{f(v)}
+    exit r
+}
+exit f(1)

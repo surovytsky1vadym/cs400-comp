@@ -1,0 +1,12 @@
+struct Point
+{
+    i32 x
+    i32 y
+    fn d2 := () -> i32
+    {
+        i32 r{x * x + y * y}
+        exit r
+    }
+}
+extern fn Point_d2 := (i32 v) -> i32
+exit 0

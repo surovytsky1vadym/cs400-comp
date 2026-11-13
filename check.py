@@ -10,11 +10,16 @@ tests/err/NAME.txt  must be rejected: non-zero exit, stderr equal to NAME.expect
                     and no output file written.
 tests/opt/NAME.txt  `lli` output must equal NAME.expected both without and with --remove-unused;
                     `--remove-unused --ast-checked` must equal NAME.astc.
+tests/io/NAME.txt   built as a binary (compiler, llc -filetype=obj -relocation-model=pic, clang -fPIE);
+                    for every session NAME.S.in the binary's output must be exactly NAME.S.expected,
+                    and its exit status 0.
+tests/ffi/NAME.txt  the same, with NAME.c given to clang next to the object file.
 
-Usage: python3 check.py [-v] [--remove-unused]   (LLI=/path/to/lli to override the interpreter)
-With --remove-unused (or REMOVE_UNUSED=1) every tests/ok and tests/err program is compiled with
-the flag: the output and the errors must stay the same. NAME.ast_checked is not compared then,
-since it is the tree before the pass.
+Usage: python3 check.py [-v] [--remove-unused]
+LLI, LLC and CLANG override the tools (default: lli, llc, clang on the PATH).
+With --remove-unused (or REMOVE_UNUSED=1) every tests/ok, tests/err, tests/io and tests/ffi program
+is compiled with the flag: the output and the errors must stay the same. NAME.ast_checked is not
+compared then, since it is the tree before the pass.
 """
 
 import os
@@ -26,6 +31,8 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 COMPILER = os.path.join(ROOT, "src", "compiler.py")
 TESTS = os.path.join(ROOT, "tests")
 LLI = os.environ.get("LLI", "lli")
+LLC = os.environ.get("LLC", "llc")
+CLANG = os.environ.get("CLANG", "clang")
 PY = sys.executable
 OPT = "--remove-unused" in sys.argv or bool(os.environ.get("REMOVE_UNUSED"))
 FLAGS = ["--remove-unused"] if OPT else []
@@ -93,11 +100,53 @@ def check_opt(src, base, tmp):
     return True, detail
 
 
+def build_binary(src, base, tmp, extra=()):
+    """The three commands of full_compiler.sh: .txt -> .ll -> .o -> binary."""
+    ll, obj, exe = (os.path.join(tmp, "prog" + ext) for ext in (".ll", ".o", ""))
+    for cmd in ([PY, COMPILER, *FLAGS, src, ll],
+                [LLC, "-filetype=obj", "-relocation-model=pic", ll, "-o", obj],
+                [CLANG, "-fPIE", obj, *extra, "-o", exe]):
+        code, _, err = run(cmd)
+        if code != 0:
+            return None, f"{os.path.basename(cmd[0])} failed: {err}"
+    return exe, None
+
+
+def check_sessions(src, base, tmp, extra=()):
+    exe, problem = build_binary(src, base, tmp, extra)
+    if problem:
+        return False, problem
+    folder, name = os.path.split(base)
+    sessions = sorted(f[len(name) + 1:-3] for f in os.listdir(folder)
+                      if f.startswith(name + ".") and f.endswith(".in"))
+    if not sessions:
+        return False, "no session NAME.S.in"
+    for s in sessions:
+        with open(f"{base}.{s}.in") as stdin:
+            p = subprocess.run([exe], stdin=stdin, capture_output=True, text=True)
+        with open(f"{base}.{s}.expected") as f:
+            expected = f.read()
+        if p.stdout != expected:                        # exactly: no strip, a binary is a real program
+            return False, f"session {s}: expected {expected!r}, got {p.stdout!r}"
+        if p.returncode != 0:
+            return False, f"session {s}: exit status {p.returncode}, expected 0"
+    return True, f"sessions: {', '.join(sessions)}"
+
+
+def check_io(src, base, tmp):
+    return check_sessions(src, base, tmp)
+
+
+def check_ffi(src, base, tmp):
+    return check_sessions(src, base, tmp, [base + ".c"])
+
+
 def main():
     verbose = "-v" in sys.argv
     rows = []
     with tempfile.TemporaryDirectory() as tmp:
-        for folder, fn in (("ok", check_ok), ("err", check_err), ("opt", check_opt)):
+        for folder, fn in (("ok", check_ok), ("err", check_err), ("opt", check_opt),
+                           ("io", check_io), ("ffi", check_ffi)):
             d = os.path.join(TESTS, folder)
             for name in sorted(os.listdir(d)):
                 if not name.endswith(".txt"):
@@ -118,7 +167,7 @@ def main():
     failed = sum(1 for r in rows if not r[2])
     print("-" * (width + 20))
     print(f"{len(rows) - failed} passed, {failed} failed, {len(rows)} total"
-          + (" (tests/ok and tests/err with --remove-unused)" if OPT else ""))
+          + (" (tests/ok, tests/err, tests/io and tests/ffi with --remove-unused)" if OPT else ""))
     sys.exit(1 if failed else 0)
 
 

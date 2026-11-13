@@ -1,4 +1,4 @@
-# CS400 Compiler — Practice 9
+# CS400 Compiler — Practice 10
 
 Hand-written lexer, recursive-descent parser, a separate semantic pass (`SemanticChecker`)
 and code generation via `llvmlite.ir`.
@@ -11,8 +11,12 @@ python3 src/compiler.py --remove-unused input.txt output.ll            # compile
 python3 src/compiler.py --remove-unused --ast-checked input.txt        # print the tree after the pass
 lli output.ll                             # run
 python3 check.py                          # run tests/ok, tests/err and tests/opt
-python3 check.py --remove-unused          # the same, with tests/ok and tests/err compiled with the flag
+python3 check.py --remove-unused          # the same, with every program compiled with the flag
+./full_compiler.sh tests/io/points.txt points  # .txt -> .ll -> .o -> a binary (llc, clang)
 ```
+`check.py` takes the tools from `LLI`, `LLC` and `CLANG` (default: the ones on the PATH). On an Apple
+Silicon Mac with Homebrew LLVM: run it with an arm64 Python (an x86_64 one makes llvmlite write an x86_64
+triple), `LLI`/`LLC` from `/opt/homebrew/opt/llvm/bin`, and `CLANG=/usr/bin/clang` for the link.
 Flags may stand anywhere on the command line.
 
 Types: `i32`, `i64`, `bool` (`true`/`false`). Operators `+ - *` (integers, result is the wider type),
@@ -136,3 +140,37 @@ This is the compiler's memory: the compiled programs have no heap, so nothing is
 Warm-up: program 1 removes `y` (iteration 1), then `x` (iteration 2), iteration 3 removes nothing; what remains is
 `i32 z{15}` / `exit z`. Program 2 removes only the outer `x` (iteration 1: the `x` in `r := x` is the inner one),
 iteration 2 removes nothing; the program still exits with 10.
+
+## Practice 10: a real program, and calling C
+`tests/io/points.txt` is the program of the task sheet: three points read into `Point`, the squared distance by
+the member function `d2`, the matches printed by `report`. It is built as a binary, not run by `lli`:
+```bash
+python3 src/compiler.py tests/io/points.txt points.ll
+llc -filetype=obj -relocation-model=pic points.ll -o points.o
+clang -fPIE points.o -o points
+./points < tests/io/points.sheet.in        # prints exactly tests/io/points.sheet.expected
+nm points.o                                # T Point_d2, T fn_report, T main, U printf, U scanf
+```
+(`full_compiler.sh` holds the same lines.) `print(p)` is the printer of Practice 7 that walks the field table
+(`print_struct`): one `gep`, one `load` and one `printf` per field, no code per structure.
+
+Warm-up, the session for `3 4`, `1 1`, `0 5` and `25`, split in two: the typed lines are
+`tests/io/points.sheet.in`, the printed ones `tests/io/points.sheet.expected` (with `<` the typed lines never
+reach the terminal, so they are not in `.expected`).
+
+`check.py` builds every `tests/io/NAME.txt` with these three commands and feeds it every session
+`NAME.S.in`; the output must be exactly `NAME.S.expected` (no strip) and the exit status 0. Sessions of
+`points`: `sheet` (2 matches), `none` (the same points with 7: 0 matches), `all` (negative coordinates: 3).
+`tests/ffi/NAME.txt` are built the same way with `NAME.c` given to `clang`.
+
+Additional task: `extern fn abs := (i32 v) -> i32` stands among the `fn` declarations, has a signature and no
+body (`ExternFnNode`, `parse_extern`). It is called like any global function; in the IR it is a declaration under
+its C name, `declare i32 @"abs"(i32 %".1")`, and the linker finds the body (`abs` in libc, `isqrt` in
+`tests/ffi/geometry.c`). The checker (`check_extern`) accepts only what the generator can keep: parameters and
+result `i32` (C `int`) or `i64` (C `long long`); a name the module already uses (`main`, `printf`, `scanf`, a
+`fn_<name>` of a global function, a `<Struct>_<member>`) is an error. A block after the line, `extern` inside a
+block or a struct are parse errors; an `extern` after the statements and a name declared twice get the
+messages of `fn`. With `--remove-unused` an uncalled extern is removed like any global function, and a call of
+one is kept, since its C body may print (`Effects`; `tests/opt/extern_unused.txt`).
+Tests: `tests/ffi/geometry` (sessions `sheet` and `small`), `tests/ok/extern_libc.txt` (`abs`, `llabs` with an
+`i64`, from statements, a function and a member function; runs under `lli`), `tests/err/extern_*` (16 programs).

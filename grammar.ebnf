@@ -1,7 +1,8 @@
-program    ::= { struct } { fn } { statement } exit
+program    ::= { struct } { fn | extern } { statement } exit
 struct     ::= "struct" ident NL "{" NL field_decl { field_decl } { fn } "}" NL
 field_decl ::= type [ "mut" ] ident NL
 fn         ::= "fn" ident ":=" "(" [ type ident { "," type ident } ] ")" "->" type NL block
+extern     ::= "extern" "fn" ident ":=" "(" [ type ident { "," type ident } ] ")" "->" type NL      (no block)
 statement  ::= decl | assign | if | while | print | lambda
 lambda     ::= "fn" ident ":=" "[" [ capture { "," capture } ] "]" "(" [ type ident { "," type ident } ] ")" "->" type NL block
 capture    ::= [ "mut" ] ident
@@ -25,3 +26,4 @@ read       ::= "read" "(" ")"
 print      ::= "print" "(" ( string | expr ) ")"
 string     ::= '"' { any byte except '"' and newline } '"'
 (additional task: a "." may also follow a call whose result is a struct: p.moved(1).x, origin().moved(7))
+(Practice 10 additional task: an extern parameter or result is i32 or i64 only; its IR name is its C name)

@@ -1,0 +1,12 @@
+Program
+  Extern abs -> i32
+    Param v i32
+  Decl kept i32 const
+    Call abs
+      BinOp -
+        Const 0
+        Const 3
+  Decl b i32 const
+    Const 4
+  Exit
+    Var b

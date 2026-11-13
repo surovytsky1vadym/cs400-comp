@@ -1,5 +1,5 @@
 """
-compiler.py  —  Practice 8
+compiler.py  —  Practice 10
 Languages and Compilers Design · CS400
 
 Usage:
@@ -43,6 +43,7 @@ KEYWORDS = {
     b"while":  ("keyword", "control"),
     b"struct": ("keyword", "declaration"),
     b"fn":     ("keyword", "declaration"),
+    b"extern": ("keyword", "declaration"),
 }
 
 BUILTIN_TYPES = ("i32", "i64", "bool")
@@ -242,6 +243,15 @@ class MemberFnNode(FnNode):
         self.assigns_field = False    # assigns a field of its own object
         self.self_calls = []          # member functions it calls on its own object or its fields
         self.mutating = False         # decided after all bodies are checked
+
+class ExternFnNode(FnNode):
+    """extern fn name := (params) -> type: a C function, declared under its own name, no body."""
+    kind = "extern_fn"
+    label = "Extern"
+    def dump(self, indent=0):
+        print(" " * indent + f"{self.label} {self.name} -> {self.ret_type}")
+        for p in self.params:
+            print(" " * (indent + 2) + f"Param {p.name} {p.type_name}")
 
 class LambdaNode(Node):
     """fn name := [captures](params) -> type. The semantic pass fills struct and decl;
@@ -525,7 +535,7 @@ class Parser:
         if self.peek() is not None:
             self.raise_err(f"unexpected '{self.peek().text}' after the statement")
 
-    # program ::= { struct } { fn } { statement } exit
+    # program ::= { struct } { fn | extern } { statement } exit
     def parse_program(self):
         structs, fns, stmts = [], [], []
         while True:
@@ -540,11 +550,11 @@ class Parser:
                 structs.append(self.parse_struct())
             elif self.is_lambda(toks):
                 stmts.append(self.parse_statement_line())
-            elif first == "fn":
+            elif first in ("fn", "extern"):
                 if stmts:
                     self.next_line()
                     self.raise_err("a function must be declared before all statements")
-                fns.append(self.parse_fn())
+                fns.append(self.parse_fn() if first == "fn" else self.parse_extern())
             elif first == "exit":
                 self.next_line()
                 exit_node = self.parse_exit()
@@ -579,6 +589,8 @@ class Parser:
                 self.eat()
                 self.end_of_line()
                 break
+            if toks[0].text == "extern":
+                self.raise_err("'extern' is not allowed here")
             if methods:
                 self.raise_err(f"a field of '{name.text}' cannot follow a member function")
             type_tok = self.parse_type()
@@ -613,6 +625,28 @@ class Parser:
         params, ret, body = self.parse_signature_and_body(kw, name)
         return cls(name.line, name.col, name.text, params, ret.text, (ret.line, ret.col), body)
 
+    # extern ::= "extern" "fn" ident ":=" "(" [ type ident { "," type ident } ] ")" "->" type NL
+    def parse_extern(self):
+        self.next_line()
+        self.eat()                                      # 'extern'
+        tok = self.peek()
+        if tok is None or tok.text != "fn":
+            self.raise_err("expected 'fn' after 'extern'" + (f", got '{tok.text}'" if tok else ", found end of line"))
+        self.eat()
+        name = self.name_ok(self.expect("ident", "a function name"), "function")
+        tok = self.peek()
+        if tok is None or tok.text != ":=":
+            self.raise_err(f"expected ':=' after the function name" + (f", got '{tok.text}'" if tok else ""))
+        self.eat()
+        if self.peek() is not None and self.peek().kind == "lbracket":
+            self.raise_err("an extern function cannot have a capture list")
+        params, ret = self.parse_signature()
+        toks = self.peek_line()
+        if toks is not None and toks[0].kind == "lbrace":
+            raise CompileError(f"line {toks[0].line}:{toks[0].col}: extern function '{name.text}' has no body: "
+                               f"it is defined in C")
+        return ExternFnNode(name.line, name.col, name.text, params, ret.text, (ret.line, ret.col), None)
+
     # lambda ::= "fn" ident ":=" "[" [ capture { "," capture } ] "]"     capture ::= [ "mut" ] ident
     #            "(" [ type ident { "," type ident } ] ")" "->" type NL block
     def parse_lambda(self):
@@ -636,6 +670,14 @@ class Parser:
         return LambdaNode(name.line, name.col, name.text, captures, params, ret.text, (ret.line, ret.col), body)
 
     def parse_signature_and_body(self, kw, name):
+        params, ret = self.parse_signature()
+        body = self.parse_block(kw)
+        if body.exit_node is None:
+            raise CompileError(f"line {name.line}:{name.col}: the body of '{name.text}' must end with exit")
+        return params, ret, body
+
+    def parse_signature(self):
+        """( params ) -> type, up to the end of the line."""
         self.expect("lparen", "'('")
         params = []
         if self.peek() is not None and self.peek().kind != "rparen":
@@ -652,10 +694,7 @@ class Parser:
         self.expect("arrow", "'->'")
         ret = self.parse_type()
         self.end_of_line()
-        body = self.parse_block(kw)
-        if body.exit_node is None:
-            raise CompileError(f"line {name.line}:{name.col}: the body of '{name.text}' must end with exit")
-        return params, ret, body
+        return params, ret
 
     def parse_type(self):
         tok = self.peek()
@@ -686,6 +725,8 @@ class Parser:
             return self.parse_lambda()
         if tok.text in ("struct", "fn"):
             self.raise_err(f"'{tok.text}' is allowed only at the top level, before the statements")
+        if tok.text == "extern":
+            self.raise_err("'extern' is not allowed here")
         if tok.kind in ("lbrace", "rbrace"):
             self.raise_err(f"unexpected '{tok.text}'")
         if tok.kind == "string":
@@ -992,6 +1033,11 @@ class SemanticChecker:
             for p in f.params:
                 self.check_type(p.type_name, p.type_pos)
             self.check_type(f.ret_type, f.ret_pos)
+        taken = {"main", "printf", "scanf"} | {FN_PREFIX + f.name for f in node.fns if not isinstance(f, ExternFnNode)} \
+            | {f"{m.owner.name}_{m.name}" for m in methods}
+        for f in node.fns:
+            if isinstance(f, ExternFnNode):
+                self.check_extern(f, taken)
         for m in methods:
             self.current_struct = m.owner
             m.accept(self)
@@ -1036,6 +1082,22 @@ class SemanticChecker:
                                            f"'{link.name}' is not mut")
                 else:
                     break                               # a call result: a temporary copy, anything goes
+
+    def check_extern(self, node, taken):
+        """The linker matches names, never types: only the promises the generator keeps cross into C."""
+        if node.name in taken:                          # IR names: main, printf, scanf, fn_*, Struct_member
+            raise CompileError(f"line {node.line}:{node.col}: '{node.name}' is a name the compiler already "
+                               f"uses in the module")
+        for p in node.params:
+            if p.type_name not in INT_TYPES:
+                raise CompileError(f"line {p.type_pos[0]}:{p.type_pos[1]}: parameter '{p.name}' of extern "
+                                   f"function '{node.name}' has type '{p.type_name}': only i32 and i64 cross into C")
+        if node.ret_type not in INT_TYPES:
+            raise CompileError(f"line {node.ret_pos[0]}:{node.ret_pos[1]}: extern function '{node.name}' "
+                               f"returns '{node.ret_type}': only i32 and i64 cross into C")
+
+    def visit_extern_fn(self, node):                    # no body: everything was checked in check_extern
+        pass
 
     def visit_struct(self, node):
         if node.name in self.structs:
@@ -1485,8 +1547,8 @@ def has_call_or_read(expr):
 
 class Effects:
     """The additional task: the functions whose call may be observed. Directly: the body prints,
-    calls read(), has a while, or the function is a mutating member function, or it calls itself
-    (directly or through others: it may never return). Then every caller of such a function,
+    calls read(), has a while, or the function is a mutating member function, or an extern one (its
+    body is C), or it calls itself (directly or through others: it may never return). Then every caller of such a function,
     repeated until nothing changes. A callable object's call is the call of its member 'call'."""
 
     def __init__(self, tree):
@@ -1494,6 +1556,10 @@ class Effects:
         callees = {}
         acting = set()
         for f in fns:
+            if isinstance(f, ExternFnNode):             # a C body: nothing is known, so it may print
+                callees[f] = set()
+                acting.add(f)
+                continue
             body = list(walk(f.body))
             callees[f] = {n.fn for n in body if isinstance(n, (CallNode, MemberCallNode))}
             if getattr(f, "mutating", False) or any(isinstance(n, (PrintNode, ReadNode, WhileNode)) for n in body):
@@ -1554,6 +1620,9 @@ class UseCounter:
 
     visit_member_fn = visit_fn
 
+    def visit_extern_fn(self, node):
+        pass
+
     def visit_lambda(self, node):
         self.lambdas.add(id(node.struct))
         self.visit_children(node)                       # the captures are reads
@@ -1575,7 +1644,7 @@ class UseCounter:
         self.read(node.decl)
 
     def visit_call(self, node):
-        if type(node.fn) is FnNode:                     # a global function, not a sibling member
+        if type(node.fn) in (FnNode, ExternFnNode):     # a global function, not a sibling member
             self.calls[id(node.fn)] = self.calls.get(id(node.fn), 0) + 1
         self.visit_children(node)
 
@@ -1599,7 +1668,8 @@ class Pruner:
     def prune(self, tree):
         tree.stmts = self.kept(tree.stmts)
         for f in tree.fns + [m for s in tree.structs for m in s.methods]:
-            f.body.stmts = self.kept(f.body.stmts)
+            if f.body is not None:                      # an extern has none
+                f.body.stmts = self.kept(f.body.stmts)
 
     def kept(self, stmts):
         out = [s for s in stmts if not self.is_dead(s)]
@@ -1707,6 +1777,8 @@ class CodeGen:
             if isinstance(f, MemberFnNode):             # Point_shift(Point* this, ...)
                 params.insert(0, self.types[f.owner.name].as_pointer())
                 name = f"{f.owner.name}_{f.name}"
+            elif isinstance(f, ExternFnNode):           # its C name: the linker finds the body
+                name = f.name
             else:
                 name = FN_PREFIX + f.name
             f.ir_fn = ir.Function(self.module, ir.FunctionType(self.types[f.ret_type], params), name=name)
@@ -1738,6 +1810,9 @@ class CodeGen:
         node.body.accept(self)
 
     visit_member_fn = visit_fn
+
+    def visit_extern_fn(self, node):                    # a declaration: a type and no body
+        pass
 
     def visit_lambda(self, node):                       # its struct and call are ordinary by now
         node.decl.accept(self)
